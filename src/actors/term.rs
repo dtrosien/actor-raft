@@ -114,6 +114,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn set_term_test() {
+        let term = TermHandle::default();
+        let new_term: u64 = 1;
+        term.set_term(new_term).await;
+        assert_eq!(new_term, term.get_term().await);
+    }
+
+    #[tokio::test]
     async fn check_term_test() {
         let term = TermHandle::default();
         term.set_term(2).await;
