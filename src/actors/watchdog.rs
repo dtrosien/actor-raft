@@ -15,7 +15,8 @@ enum WatchdogMsg {
     GetStateHandle {
         respond_to: oneshot::Sender<StateHandle>,
     },
-    ExitState,
+    Timeout,
+    TermError,
 }
 
 impl Watchdog {
@@ -43,9 +44,13 @@ impl Watchdog {
             WatchdogMsg::GetStateHandle { respond_to } => {
                 let _ = respond_to.send(self.state_handle.clone());
             }
-            WatchdogMsg::ExitState => {
+            WatchdogMsg::Timeout => {
                 let _ = self.exit_sender.send(());
                 self.state_handle.change_state(ServerState::Candidate).await;
+            }
+            WatchdogMsg::TermError => {
+                let _ = self.exit_sender.send(());
+                self.state_handle.change_state(ServerState::Follower).await;
             }
         }
     }
@@ -69,14 +74,23 @@ impl WatchdogHandle {
     pub async fn get_shutdown_sig(&self) -> broadcast::Receiver<()> {
         let (send, recv) = oneshot::channel();
         let msg = WatchdogMsg::GetExitReceiver { respond_to: send };
-        
+
         let _ = self.sender.send(msg).await;
         recv.await.expect("watchdog task has been killed")
     }
 
     pub async fn timeout(&self) {
         println!("Watchdog got timeout signal");
-        let msg = WatchdogMsg::ExitState;
+        let msg = WatchdogMsg::Timeout;
+        self.sender
+            .send(msg)
+            .await
+            .expect("watchdog task has been killed");
+    }
+
+    pub async fn term_error(&self) {
+        println!("Watchdog got term error signal");
+        let msg = WatchdogMsg::TermError;
         self.sender
             .send(msg)
             .await
@@ -86,7 +100,7 @@ impl WatchdogHandle {
     pub async fn get_state_handle(&self) -> StateHandle {
         let (send, recv) = oneshot::channel();
         let msg = WatchdogMsg::GetStateHandle { respond_to: send };
-        
+
         let _ = self.sender.send(msg).await;
         recv.await.expect("watchdog task has been killed")
     }
