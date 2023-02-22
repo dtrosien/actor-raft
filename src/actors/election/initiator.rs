@@ -12,6 +12,7 @@ struct Initiator {
     counter: CounterHandle,
     workers: BTreeMap<u64, WorkerHandle>,
     voted_for: Option<u64>,
+    id: u64,
     last_log_index: u64,
     last_log_term: u64,
 }
@@ -34,7 +35,9 @@ impl Initiator {
         watchdog: WatchdogHandle,
         config: Config,
     ) -> Self {
-        let counter = CounterHandle::new(watchdog).await;
+        let votes_required = (config.nodes.len() / 2) as u64;
+        let id = config.id;
+        let counter = CounterHandle::new(watchdog, votes_required).await;
         let workers = config
             .nodes
             .into_iter()
@@ -51,6 +54,7 @@ impl Initiator {
             counter,
             workers,
             voted_for: None,
+            id,
             last_log_index: 0,
             last_log_term: 0,
         }
@@ -78,8 +82,11 @@ impl Initiator {
         }
     }
 
-    async fn start_election(&self) {
+    async fn start_election(&mut self) {
+        //increment current term
         self.term.increment_term().await;
+        //vote for self
+        self.voted_for = Some(self.id);
         for worker in self.workers.iter() {
             worker.1.request_vote().await;
         }

@@ -77,19 +77,22 @@ mod tests {
 
     #[tokio::test]
     async fn heartbeat_test() {
-        // asserts if the shutdown signal is only send from the watchdog after a timeout
         // since tokio only supports granularity on ms base, the test is expected only to pass up to 9ms sleep time
 
         let watchdog = WatchdogHandle::default();
         let timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(10));
-        for n in 0..10 {
+        for n in 0..9 {
             timer.send_heartbeat().await;
             tokio::time::sleep(Duration::from_millis(n)).await;
-            if n == 9 {
-                assert_eq!(watchdog.get_shutdown_sig().await.len(), 1);
-            } else {
-                assert_eq!(watchdog.get_shutdown_sig().await.len(), 0);
-            }
+            assert_eq!(watchdog.get_shutdown_sig().await.len(), 0);
         }
+    }
+    #[tokio::test]
+    async fn timeout_test() {
+        // asserts if the shutdown signal is send from the watchdog after a timeout
+        let watchdog = WatchdogHandle::default();
+        let _timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(10));
+        tokio::time::sleep(Duration::from_millis(11)).await;
+        assert_eq!(watchdog.get_shutdown_sig().await.len(), 1);
     }
 }

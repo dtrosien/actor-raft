@@ -5,6 +5,7 @@ struct Counter {
     receiver: mpsc::Receiver<CounterMsg>,
     watchdog: WatchdogHandle,
     votes_received: u64,
+    votes_required: u64,
 }
 
 enum CounterMsg {
@@ -12,11 +13,16 @@ enum CounterMsg {
 }
 
 impl Counter {
-    async fn new(receiver: mpsc::Receiver<CounterMsg>, watchdog: WatchdogHandle) -> Self {
+    async fn new(
+        receiver: mpsc::Receiver<CounterMsg>,
+        watchdog: WatchdogHandle,
+        votes_required: u64,
+    ) -> Self {
         Counter {
             receiver,
             watchdog,
             votes_received: 0,
+            votes_required,
         }
     }
 
@@ -43,9 +49,9 @@ pub struct CounterHandle {
 }
 
 impl CounterHandle {
-    pub async fn new(watchdog: WatchdogHandle) -> Self {
+    pub async fn new(watchdog: WatchdogHandle, votes_required: u64) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut counter = Counter::new(receiver, watchdog).await;
+        let mut counter = Counter::new(receiver, watchdog, votes_required).await;
         tokio::spawn(async move { counter.run().await });
 
         Self { sender }
@@ -64,7 +70,8 @@ mod tests {
     #[tokio::test]
     async fn register_vote_test() {
         let watchdog = WatchdogHandle::default();
-        let counter = CounterHandle::new(watchdog).await;
+        let votes_required: u64 = 3;
+        let counter = CounterHandle::new(watchdog, votes_required).await;
         let vote = Some(true);
         counter.register_vote(vote).await;
         //todo write test

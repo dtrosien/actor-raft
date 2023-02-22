@@ -79,7 +79,8 @@ mod tests {
     async fn request_vote_test() {
         let watchdog = WatchdogHandle::default();
         let term = TermHandle::new(watchdog.clone());
-        let counter = CounterHandle::new(watchdog).await;
+        let votes_required: u64 = 3;
+        let counter = CounterHandle::new(watchdog, votes_required).await;
         let node = Node {
             id: 0,
             fqdn: "".to_string(),
