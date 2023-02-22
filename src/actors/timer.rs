@@ -85,7 +85,6 @@ mod tests {
         for n in 0..10 {
             timer.send_heartbeat().await;
             tokio::time::sleep(Duration::from_millis(n)).await;
-            println!("{n}");
             if n == 9 {
                 assert_eq!(watchdog.get_shutdown_sig().await.len(), 1);
             } else {

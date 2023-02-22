@@ -19,6 +19,7 @@ enum TermMsg {
     Set {
         term: u64,
     },
+    Increment,
 }
 
 impl Term {
@@ -42,6 +43,7 @@ impl Term {
                 let _ = respond_to.send(self.current_term);
             }
             TermMsg::Set { term } => self.current_term = term,
+            TermMsg::Increment => self.current_term += 1,
             TermMsg::CheckTerm { respond_to, term } => match term.cmp(&self.current_term) {
                 Ordering::Less => {
                     let _ = respond_to.send(Some(false));
@@ -93,6 +95,11 @@ impl TermHandle {
         };
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn increment_term(&self) {
+        let msg = TermMsg::Increment;
+        let _ = self.sender.send(msg).await;
     }
 }
 
