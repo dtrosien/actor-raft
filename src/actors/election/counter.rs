@@ -46,9 +46,15 @@ impl Counter {
         if let Some(vote) = vote {
             if vote {
                 self.votes_received += 1;
+                self.report_to_watchdog().await;
             }
         }
-        //todo implement watchdog call
+    }
+
+    async fn report_to_watchdog(&self) {
+        if self.votes_received.ge(&self.votes_required) {
+            self.watchdog.election_won().await;
+        }
     }
 }
 
@@ -95,4 +101,18 @@ mod tests {
         counter.register_vote(vote).await;
         assert_eq!(counter.get_votes_received().await, 1);
     }
+
+    #[tokio::test]
+    async fn election_won_test() {
+        let watchdog = WatchdogHandle::default();
+        let votes_required: u64 = 3;
+        let counter = CounterHandle::new(watchdog, votes_required).await;
+        let vote = Some(true);
+
+        assert_eq!(counter.get_votes_received().await, 0);
+        counter.register_vote(vote).await;
+        assert_eq!(counter.get_votes_received().await, 1);
+    }
+    
+    
 }

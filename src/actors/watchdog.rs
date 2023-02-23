@@ -17,6 +17,7 @@ enum WatchdogMsg {
     },
     Timeout,
     TermError,
+    ElectionWon,
 }
 
 impl Watchdog {
@@ -38,7 +39,6 @@ impl Watchdog {
     async fn handle_message(&mut self, msg: WatchdogMsg) {
         match msg {
             WatchdogMsg::GetExitReceiver { respond_to } => {
-                // let _ ignores errors when sending
                 let _ = respond_to.send(self.exit_sender.subscribe());
             }
             WatchdogMsg::GetStateHandle { respond_to } => {
@@ -51,6 +51,10 @@ impl Watchdog {
             WatchdogMsg::TermError => {
                 let _ = self.exit_sender.send(());
                 self.state_handle.change_state(ServerState::Follower).await;
+            }
+            WatchdogMsg::ElectionWon => {
+                let _ = self.exit_sender.send(());
+                self.state_handle.change_state(ServerState::Leader).await;
             }
         }
     }
@@ -91,6 +95,15 @@ impl WatchdogHandle {
     pub async fn term_error(&self) {
         println!("Watchdog got term error signal");
         let msg = WatchdogMsg::TermError;
+        self.sender
+            .send(msg)
+            .await
+            .expect("watchdog task has been killed");
+    }
+
+    pub async fn election_won(&self) {
+        println!("Watchdog got election won signal");
+        let msg = WatchdogMsg::ElectionWon;
         self.sender
             .send(msg)
             .await

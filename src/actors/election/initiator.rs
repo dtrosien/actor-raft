@@ -42,7 +42,7 @@ impl Initiator {
         watchdog: WatchdogHandle,
         config: Config,
     ) -> Self {
-        let votes_required = (config.nodes.len() / 2) as u64;
+        let votes_required = calculate_required_votes(config.nodes.len() as u64);
         let id = config.id;
         let counter = CounterHandle::new(watchdog, votes_required).await;
         let workers = config
@@ -159,6 +159,15 @@ impl InitiatorHandle {
     }
 }
 
+//exclude candidate (-> insert only number of other nodes)
+fn calculate_required_votes(nodes_num: u64) -> u64 {
+    if nodes_num % 2 == 0 {
+        nodes_num / 2
+    } else {
+        (nodes_num + 1) / 2
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +216,19 @@ mod tests {
             counter.get_votes_received().await,
             config.nodes.len() as u64
         );
+    }
+
+    #[tokio::test]
+    async fn calculate_required_votes_test() {
+        // only one server in total
+        assert_eq!(calculate_required_votes(0), 0);
+        // two servers total
+        assert_eq!(calculate_required_votes(1), 1);
+        // even number of other servers
+        assert_eq!(calculate_required_votes(2), 1);
+        assert_eq!(calculate_required_votes(10), 5);
+        //odd number of other servers
+        assert_eq!(calculate_required_votes(9), 5);
+        assert_eq!(calculate_required_votes(11), 6);
     }
 }
