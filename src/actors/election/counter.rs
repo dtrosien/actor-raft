@@ -1,5 +1,5 @@
 use crate::actors::watchdog::WatchdogHandle;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 struct Counter {
     receiver: mpsc::Receiver<CounterMsg>,
@@ -10,6 +10,7 @@ struct Counter {
 
 enum CounterMsg {
     RegisterVote { vote: Option<bool> },
+    GetVotesReceived { respond_to: oneshot::Sender<u64> },
 }
 
 impl Counter {
@@ -34,12 +35,20 @@ impl Counter {
 
     async fn handle_message(&mut self, msg: CounterMsg) {
         match msg {
-            CounterMsg::RegisterVote { vote } => {}
+            CounterMsg::RegisterVote { vote } => self.register_vote(vote).await,
+            CounterMsg::GetVotesReceived { respond_to } => {
+                let _ = respond_to.send(self.votes_received);
+            }
         }
     }
 
-    async fn register_vote(&self) {
-        //todo implement
+    async fn register_vote(&mut self, vote: Option<bool>) {
+        if let Some(vote) = vote {
+            if vote {
+                self.votes_received += 1;
+            }
+        }
+        //todo implement watchdog call
     }
 }
 
@@ -61,6 +70,14 @@ impl CounterHandle {
         let msg = CounterMsg::RegisterVote { vote };
         let _ = self.sender.send(msg).await;
     }
+
+    pub async fn get_votes_received(&self) -> u64 {
+        let (send, recv) = oneshot::channel();
+        let msg = CounterMsg::GetVotesReceived { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
 }
 
 #[cfg(test)]
@@ -73,7 +90,9 @@ mod tests {
         let votes_required: u64 = 3;
         let counter = CounterHandle::new(watchdog, votes_required).await;
         let vote = Some(true);
+
+        assert_eq!(counter.get_votes_received().await, 0);
         counter.register_vote(vote).await;
-        //todo write test
+        assert_eq!(counter.get_votes_received().await, 1);
     }
 }

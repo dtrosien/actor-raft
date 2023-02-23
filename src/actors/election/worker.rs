@@ -1,7 +1,7 @@
 use crate::actors::election::counter::CounterHandle;
 use crate::actors::term::TermHandle;
 use crate::config::Node;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
     receiver: mpsc::Receiver<WorkerMsg>,
@@ -12,6 +12,7 @@ struct Worker {
 
 enum WorkerMsg {
     RequestVote,
+    GetNode { respond_to: oneshot::Sender<Node> },
 }
 
 impl Worker {
@@ -38,13 +39,16 @@ impl Worker {
     async fn handle_message(&mut self, msg: WorkerMsg) {
         match msg {
             WorkerMsg::RequestVote => {
-                let vote = self.send_request_vote();
+                let vote = self.request_vote().await;
                 self.counter.register_vote(vote).await;
+            }
+            WorkerMsg::GetNode { respond_to } => {
+                let _ = respond_to.send(self.node.clone());
             }
         }
     }
 
-    fn send_request_vote(&self) -> Option<bool> {
+    async fn request_vote(&self) -> Option<bool> {
         //todo call rpc function
         Some(true)
     }
@@ -64,6 +68,14 @@ impl WorkerHandle {
         Self { sender }
     }
 
+    pub async fn get_node(&self) -> Node {
+        let (send, recv) = oneshot::channel();
+        let msg = WorkerMsg::GetNode { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
     pub async fn request_vote(&self) {
         let msg = WorkerMsg::RequestVote;
         let _ = self.sender.send(msg).await;
@@ -74,6 +86,23 @@ impl WorkerHandle {
 mod tests {
     use super::*;
     use crate::actors::watchdog::WatchdogHandle;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn get_node_test() {
+        let watchdog = WatchdogHandle::default();
+        let term = TermHandle::new(watchdog.clone());
+        let votes_required: u64 = 3;
+        let counter = CounterHandle::new(watchdog, votes_required).await;
+        let node = Node {
+            id: 0,
+            fqdn: "".to_string(),
+            port: 0,
+        };
+        let worker = WorkerHandle::new(term, counter, node.clone());
+
+        assert_eq!(worker.get_node().await.id, node.id);
+    }
 
     #[tokio::test]
     async fn request_vote_test() {
@@ -86,7 +115,12 @@ mod tests {
             fqdn: "".to_string(),
             port: 0,
         };
-        let worker = WorkerHandle::new(term, counter, node);
-        //todo write test
+        let worker = WorkerHandle::new(term, counter.clone(), node);
+
+        assert_eq!(counter.clone().get_votes_received().await, 0);
+        worker.request_vote().await;
+        // sleep necessary to make sure that vote is processed before getting it
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert_eq!(counter.clone().get_votes_received().await, 1);
     }
 }

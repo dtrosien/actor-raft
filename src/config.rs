@@ -28,6 +28,25 @@ impl Config {
             nodes: vec![],
         }
     }
+
+    pub fn for_test() -> Self {
+        let mut nodes = Vec::new();
+        for n in 1..=4 {
+            let node = Node {
+                id: n,
+                fqdn: format!("node{n}"),
+                port: 0,
+            };
+            nodes.push(node)
+        }
+        Config {
+            id: 0,
+            fqdn: "node0".to_string(),
+            port: 0,
+            state_store_path: "".to_string(),
+            nodes,
+        }
+    }
 }
 
 //todo sinnvolle defaults definieren

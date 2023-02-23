@@ -21,6 +21,13 @@ enum InitiatorMsg {
     GetVotedFor {
         respond_to: oneshot::Sender<Option<u64>>,
     },
+    GetWorker {
+        respond_to: oneshot::Sender<Option<WorkerHandle>>,
+        id: u64,
+    },
+    GetCounter {
+        respond_to: oneshot::Sender<CounterHandle>,
+    },
     SetLastLogMeta {
         last_log_index: u64,
         last_log_term: u64,
@@ -71,13 +78,16 @@ impl Initiator {
             InitiatorMsg::GetVotedFor { respond_to } => {
                 let _ = respond_to.send(self.voted_for);
             }
+            InitiatorMsg::GetWorker { respond_to, id } => {
+                let _ = respond_to.send(self.get_worker(id));
+            }
+            InitiatorMsg::GetCounter { respond_to } => {
+                let _ = respond_to.send(self.counter.clone());
+            }
             InitiatorMsg::SetLastLogMeta {
                 last_log_index,
                 last_log_term,
-            } => {
-                self.last_log_index = last_log_index;
-                self.last_log_term = last_log_term;
-            }
+            } => self.set_last_log_meta(last_log_index, last_log_term),
             InitiatorMsg::StartElection => self.start_election().await,
         }
     }
@@ -90,6 +100,15 @@ impl Initiator {
         for worker in self.workers.iter() {
             worker.1.request_vote().await;
         }
+    }
+
+    fn set_last_log_meta(&mut self, last_log_index: u64, last_log_term: u64) {
+        self.last_log_index = last_log_index;
+        self.last_log_term = last_log_term;
+    }
+
+    fn get_worker(&self, id: u64) -> Option<WorkerHandle> {
+        self.workers.get(&id).cloned()
     }
 }
 
@@ -115,6 +134,25 @@ impl InitiatorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    async fn get_worker(&self, id: u64) -> Option<WorkerHandle> {
+        let (send, recv) = oneshot::channel();
+        let msg = InitiatorMsg::GetWorker {
+            respond_to: send,
+            id,
+        };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    async fn get_counter(&self) -> CounterHandle {
+        let (send, recv) = oneshot::channel();
+        let msg = InitiatorMsg::GetCounter { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
     pub async fn start_election(&self) {
         let msg = InitiatorMsg::StartElection;
         let _ = self.sender.send(msg).await;
@@ -135,12 +173,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_worker_test() {
+        let watchdog = WatchdogHandle::default();
+        let term = TermHandle::new(watchdog.clone());
+        let config = Config::for_test();
+        let initiator = InitiatorHandle::new(term, watchdog, config).await;
+
+        assert_eq!(
+            initiator
+                .get_worker(1)
+                .await
+                .expect("must not panic")
+                .get_node()
+                .await
+                .id,
+            1
+        );
+    }
+
+    #[tokio::test]
     async fn start_election_test() {
         let watchdog = WatchdogHandle::default();
         let term = TermHandle::new(watchdog.clone());
-        let config = Config::new();
-        let initiator = InitiatorHandle::new(term, watchdog, config).await;
 
-        //todo write test (add private fn to check worker status etc)
+        let config = Config::for_test();
+        let initiator = InitiatorHandle::new(term, watchdog, config.clone()).await;
+
+        initiator.start_election().await;
+
+        let counter = initiator.get_counter().await;
+
+        assert_eq!(
+            counter.get_votes_received().await,
+            config.nodes.len() as u64
+        );
     }
 }
