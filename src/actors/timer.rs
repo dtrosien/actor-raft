@@ -74,7 +74,6 @@ impl TimerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::select;
 
     #[tokio::test]
     async fn heartbeat_test() {
@@ -82,10 +81,10 @@ mod tests {
 
         let watchdog = WatchdogHandle::default();
         let timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(10));
-        let mut signal = watchdog.get_shutdown_sig().await;
+        let mut signal = watchdog.get_exit_receiver().await;
         for n in 0..9 {
             timer.send_heartbeat().await;
-            select! {
+            tokio::select! {
             _ = signal.recv() => {panic!()},
             _ = tokio::time::sleep(Duration::from_millis(n))=> {}
             }
@@ -97,8 +96,8 @@ mod tests {
         // asserts if the shutdown signal is send from the watchdog after a timeout
         let watchdog = WatchdogHandle::default();
         let _timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(10));
-        let mut signal = watchdog.get_shutdown_sig().await;
-        select! {
+        let mut signal = watchdog.get_exit_receiver().await;
+        tokio::select! {
         _ = signal.recv() => {},
         _ = tokio::time::sleep(Duration::from_millis(15))=> {panic!()}
         }

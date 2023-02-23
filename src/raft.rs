@@ -26,7 +26,7 @@ impl Raft {
     }
 
     pub async fn run(&mut self) {
-        let mut exit_state_r = self.watchdog.get_shutdown_sig().await;
+        let mut exit_state_r = self.watchdog.get_exit_receiver().await;
         println!("{:?}", self.state.get_state().await);
 
         exit_state_r.recv().await.expect("TODO: panic message");

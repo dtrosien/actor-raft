@@ -75,7 +75,7 @@ impl WatchdogHandle {
         Self { sender }
     }
 
-    pub async fn get_shutdown_sig(&self) -> broadcast::Receiver<()> {
+    pub async fn get_exit_receiver(&self) -> broadcast::Receiver<()> {
         let (send, recv) = oneshot::channel();
         let msg = WatchdogMsg::GetExitReceiver { respond_to: send };
 

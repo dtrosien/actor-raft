@@ -89,6 +89,7 @@ impl CounterHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn register_vote_test() {
@@ -105,14 +106,23 @@ mod tests {
     #[tokio::test]
     async fn election_won_test() {
         let watchdog = WatchdogHandle::default();
-        let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required).await;
+        let votes_required: u64 = 2;
+        let counter = CounterHandle::new(watchdog.clone(), votes_required).await;
         let vote = Some(true);
 
-        assert_eq!(counter.get_votes_received().await, 0);
+        // first vote -> no exit, since not enough votes
         counter.register_vote(vote).await;
-        assert_eq!(counter.get_votes_received().await, 1);
+        let mut signal = watchdog.get_exit_receiver().await;
+        tokio::select! {
+        _ = signal.recv() => {panic!()},
+        _ = tokio::time::sleep(Duration::from_millis(5))=> {}
+        }
+
+        // second vote -> required votes reached -> exit signal for state change must fire
+        counter.register_vote(vote).await;
+        tokio::select! {
+        _ = signal.recv() => {},
+        _ = tokio::time::sleep(Duration::from_millis(5))=> {panic!()}
+        }
     }
-    
-    
 }
