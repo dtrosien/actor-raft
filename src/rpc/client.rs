@@ -5,17 +5,17 @@ use std::time::Duration;
 use tonic::transport::Channel;
 
 #[derive(Clone)]
-struct Reply {
+pub struct Reply {
     term: u64,
     success_or_granted: bool,
 }
 
-async fn request_vote(
+pub async fn request_vote(
     uri: String,
     vote_request: RequestVoteRequest,
 ) -> Result<Reply, Box<dyn Error>> {
     let channel = Channel::builder(uri.parse().unwrap())
-        .connect_timeout(Duration::from_secs(10))
+        // .connect_timeout(Duration::from_secs(10)) // todo not needed?
         .connect()
         .await?;
 

@@ -1,6 +1,7 @@
 use crate::actors::election::counter::CounterHandle;
 use crate::actors::term::TermHandle;
 use crate::config::Node;
+use crate::rpc;
 use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
@@ -50,6 +51,8 @@ impl Worker {
 
     async fn request_vote(&self) -> Option<bool> {
         //todo call rpc function
+
+        // rpc::client::request_vote(/* std::string::String */, /* raft_rpc::RequestVoteRequest */);
         Some(true)
     }
 }
