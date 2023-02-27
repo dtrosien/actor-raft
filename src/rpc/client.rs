@@ -15,7 +15,7 @@ pub async fn request_vote(
     vote_request: RequestVoteRequest,
 ) -> Result<Reply, Box<dyn Error>> {
     let channel = Channel::builder(uri.parse().unwrap())
-        // .connect_timeout(Duration::from_secs(10)) // todo not needed?
+        .connect_timeout(Duration::from_secs(1)) // todo not needed?
         .connect()
         .await?;
 
@@ -36,7 +36,7 @@ async fn append_entry(
     uri: String,
     append_entry_request: AppendEntriesRequest,
 ) -> Result<Reply, Box<dyn Error>> {
-    //todo implement
+    //todo implement append_entry client
 
     Ok(Reply {
         term: 0,
