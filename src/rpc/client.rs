@@ -6,8 +6,8 @@ use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct Reply {
-    term: u64,
-    success_or_granted: bool,
+    pub term: u64,
+    pub success_or_granted: bool,
 }
 
 pub async fn request_vote(
