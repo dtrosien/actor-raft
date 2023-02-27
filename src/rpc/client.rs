@@ -13,8 +13,8 @@ pub struct Reply {
 pub async fn request_vote(
     uri: String,
     vote_request: RequestVoteRequest,
-) -> Result<Reply, Box<dyn Error>> {
-    let channel = Channel::builder(uri.parse().unwrap())
+) -> Result<Reply, Box<dyn Error + Send + Sync>> {
+    let channel = Channel::builder(uri.parse()?)
         .connect_timeout(Duration::from_secs(1)) // todo not needed?
         .connect()
         .await?;
@@ -147,10 +147,10 @@ mod tests {
     // takes a async function as input
     // function needs to be inserted as a closure
 
-    async fn start_test_request<F, Fut>(f: F) -> Result<Reply, Box<dyn Error>>
+    async fn start_test_request<F, Fut>(f: F) -> Result<Reply, Box<dyn Error + Send + Sync>>
     where
         F: Fn() -> Fut,
-        Fut: Future<Output = Result<Reply, Box<dyn Error>>>,
+        Fut: Future<Output = Result<Reply, Box<dyn Error + Send + Sync>>>,
     {
         // give server time to start
         tokio::time::sleep(Duration::from_millis(1)).await;

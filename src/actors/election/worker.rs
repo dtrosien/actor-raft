@@ -1,7 +1,9 @@
 use crate::actors::election::counter::CounterHandle;
 use crate::actors::term::TermHandle;
 use crate::config::Node;
+use crate::raft_rpc::RequestVoteRequest;
 use crate::rpc;
+use crate::rpc::client::Reply;
 use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
@@ -50,10 +52,23 @@ impl Worker {
     }
 
     async fn request_vote(&self) -> Option<bool> {
-        //todo call rpc function
+        //todo adjust input params
+        let request = RequestVoteRequest {
+            term: 0,
+            candidate_id: 0,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+        let uri = "".to_string();
 
-        // rpc::client::request_vote(/* std::string::String */, /* raft_rpc::RequestVoteRequest */);
-        Some(true)
+        match rpc::client::request_vote(uri, request).await {
+            Ok(reply) => {
+                //todo term check here correct?
+                self.term.check_term(reply.term).await;
+                Some(reply.success_or_granted)
+            }
+            Err(_) => Some(true), //todo fix tests
+        }
     }
 }
 
