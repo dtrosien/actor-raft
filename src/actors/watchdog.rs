@@ -1,10 +1,10 @@
-use crate::actors::state::{ServerState, StateHandle};
+use crate::actors::state_store::{ServerState, StateStoreHandle};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 struct Watchdog {
     receiver: mpsc::Receiver<WatchdogMsg>,
     exit_sender: broadcast::Sender<()>,
-    state_handle: StateHandle,
+    state_store: StateStoreHandle,
 }
 
 #[derive(Debug)]
@@ -12,8 +12,8 @@ enum WatchdogMsg {
     GetExitReceiver {
         respond_to: oneshot::Sender<broadcast::Receiver<()>>,
     },
-    GetStateHandle {
-        respond_to: oneshot::Sender<StateHandle>,
+    GetStateStoreHandle {
+        respond_to: oneshot::Sender<StateStoreHandle>,
     },
     Timeout,
     TermError,
@@ -21,12 +21,12 @@ enum WatchdogMsg {
 }
 
 impl Watchdog {
-    fn new(receiver: mpsc::Receiver<WatchdogMsg>, state_handle: StateHandle) -> Self {
+    fn new(receiver: mpsc::Receiver<WatchdogMsg>, state_store: StateStoreHandle) -> Self {
         let (exit_sender, _) = broadcast::channel(8);
         Watchdog {
             receiver,
             exit_sender,
-            state_handle,
+            state_store,
         }
     }
 
@@ -41,20 +41,20 @@ impl Watchdog {
             WatchdogMsg::GetExitReceiver { respond_to } => {
                 let _ = respond_to.send(self.exit_sender.subscribe());
             }
-            WatchdogMsg::GetStateHandle { respond_to } => {
-                let _ = respond_to.send(self.state_handle.clone());
+            WatchdogMsg::GetStateStoreHandle { respond_to } => {
+                let _ = respond_to.send(self.state_store.clone());
             }
             WatchdogMsg::Timeout => {
                 let _ = self.exit_sender.send(());
-                self.state_handle.change_state(ServerState::Candidate).await;
+                self.state_store.change_state(ServerState::Candidate).await;
             }
             WatchdogMsg::TermError => {
                 let _ = self.exit_sender.send(());
-                self.state_handle.change_state(ServerState::Follower).await;
+                self.state_store.change_state(ServerState::Follower).await;
             }
             WatchdogMsg::ElectionWon => {
                 let _ = self.exit_sender.send(());
-                self.state_handle.change_state(ServerState::Leader).await;
+                self.state_store.change_state(ServerState::Leader).await;
             }
         }
     }
@@ -66,9 +66,9 @@ pub struct WatchdogHandle {
 }
 
 impl WatchdogHandle {
-    pub fn new(state: StateHandle) -> Self {
+    pub fn new(state_store: StateStoreHandle) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut watchdog = Watchdog::new(receiver, state);
+        let mut watchdog = Watchdog::new(receiver, state_store);
 
         tokio::spawn(async move { watchdog.run().await });
 
@@ -110,9 +110,9 @@ impl WatchdogHandle {
             .expect("watchdog task has been killed");
     }
 
-    pub async fn get_state_handle(&self) -> StateHandle {
+    pub async fn get_state_store_handle(&self) -> StateStoreHandle {
         let (send, recv) = oneshot::channel();
-        let msg = WatchdogMsg::GetStateHandle { respond_to: send };
+        let msg = WatchdogMsg::GetStateStoreHandle { respond_to: send };
 
         let _ = self.sender.send(msg).await;
         recv.await.expect("watchdog task has been killed")
@@ -121,7 +121,7 @@ impl WatchdogHandle {
 
 impl Default for WatchdogHandle {
     fn default() -> Self {
-        let state_handle = StateHandle::new();
+        let state_handle = StateStoreHandle::new();
         WatchdogHandle::new(state_handle)
     }
 }

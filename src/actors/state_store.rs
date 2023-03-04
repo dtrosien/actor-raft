@@ -7,7 +7,7 @@ pub enum ServerState {
     Candidate,
 }
 
-struct State {
+struct StateStore {
     receiver: mpsc::Receiver<StateMsg>,
     state: ServerState,
 }
@@ -20,9 +20,9 @@ enum StateMsg {
     },
 }
 
-impl State {
+impl StateStore {
     fn new(receiver: mpsc::Receiver<StateMsg>) -> Self {
-        State {
+        StateStore {
             receiver,
             state: ServerState::Follower,
         }
@@ -49,16 +49,16 @@ impl State {
 }
 
 #[derive(Clone, Debug)]
-pub struct StateHandle {
+pub struct StateStoreHandle {
     sender: mpsc::Sender<StateMsg>,
 }
 
-impl StateHandle {
+impl StateStoreHandle {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut state = State::new(receiver);
+        let mut state_store = StateStore::new(receiver);
 
-        tokio::spawn(async move { state.run().await });
+        tokio::spawn(async move { state_store.run().await });
 
         Self { sender }
     }
@@ -76,8 +76,8 @@ impl StateHandle {
     }
 }
 
-impl Default for StateHandle {
+impl Default for StateStoreHandle {
     fn default() -> Self {
-        StateHandle::new()
+        StateStoreHandle::new()
     }
 }

@@ -1,6 +1,6 @@
 use crate::actors::election::counter::CounterHandle;
 use crate::actors::election::worker::WorkerHandle;
-use crate::actors::term::TermHandle;
+use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::{Config, Node};
 use std::collections::BTreeMap;
@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, oneshot};
 
 struct Initiator {
     receiver: mpsc::Receiver<InitiatorMsg>,
-    term: TermHandle,
+    term: TermStoreHandle,
     counter: CounterHandle,
     workers: BTreeMap<u64, WorkerHandle>,
     voted_for: Option<u64>,
@@ -38,7 +38,7 @@ enum InitiatorMsg {
 impl Initiator {
     async fn new(
         receiver: mpsc::Receiver<InitiatorMsg>,
-        term: TermHandle,
+        term: TermStoreHandle,
         watchdog: WatchdogHandle,
         config: Config,
     ) -> Self {
@@ -118,7 +118,7 @@ pub struct InitiatorHandle {
 }
 
 impl InitiatorHandle {
-    pub async fn new(term: TermHandle, watchdog: WatchdogHandle, config: Config) -> Self {
+    pub async fn new(term: TermStoreHandle, watchdog: WatchdogHandle, config: Config) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut initiator = Initiator::new(receiver, term, watchdog, config).await;
         tokio::spawn(async move { initiator.run().await });
@@ -175,7 +175,7 @@ mod tests {
     #[tokio::test]
     async fn get_voted_for_test() {
         let watchdog = WatchdogHandle::default();
-        let term = TermHandle::new(watchdog.clone());
+        let term = TermStoreHandle::new(watchdog.clone());
         let config = Config::new();
         let initiator = InitiatorHandle::new(term, watchdog, config).await;
         assert_eq!(initiator.get_voted_for().await, None);
@@ -184,7 +184,7 @@ mod tests {
     #[tokio::test]
     async fn get_worker_test() {
         let watchdog = WatchdogHandle::default();
-        let term = TermHandle::new(watchdog.clone());
+        let term = TermStoreHandle::new(watchdog.clone());
         let config = Config::for_test();
         let initiator = InitiatorHandle::new(term, watchdog, config).await;
 
@@ -203,7 +203,7 @@ mod tests {
     #[tokio::test]
     async fn start_election_test() {
         let watchdog = WatchdogHandle::default();
-        let term = TermHandle::new(watchdog.clone());
+        let term = TermStoreHandle::new(watchdog.clone());
 
         let config = Config::for_test();
         let initiator = InitiatorHandle::new(term, watchdog, config.clone()).await;

@@ -1,21 +1,21 @@
-use crate::actors::state::StateHandle;
+use crate::actors::state_store::StateStoreHandle;
 use crate::actors::timer::TimerHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use std::time::Duration;
 
 pub struct Raft {
-    state: StateHandle,
+    state_store: StateStoreHandle,
     watchdog: WatchdogHandle,
     core: CoreHandles,
 }
 
 impl Raft {
     pub fn build() -> Self {
-        let state = StateHandle::new();
-        let watchdog = WatchdogHandle::new(state.clone());
+        let state_store = StateStoreHandle::new();
+        let watchdog = WatchdogHandle::new(state_store.clone());
         let core = create_actors(watchdog.clone());
         Raft {
-            state,
+            state_store,
             watchdog,
             core,
         }
@@ -27,10 +27,10 @@ impl Raft {
 
     pub async fn run(&mut self) {
         let mut exit_state_r = self.watchdog.get_exit_receiver().await;
-        println!("{:?}", self.state.get_state().await);
+        println!("{:?}", self.state_store.get_state().await);
 
         exit_state_r.recv().await.expect("TODO: panic message");
-        println!("{:?}", self.state.get_state().await);
+        println!("{:?}", self.state_store.get_state().await);
     }
 
     pub async fn run_continuously(&mut self) {

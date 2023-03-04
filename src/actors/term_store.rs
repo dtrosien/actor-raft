@@ -2,7 +2,7 @@ use crate::actors::watchdog::WatchdogHandle;
 use std::cmp::Ordering;
 use tokio::sync::{mpsc, oneshot};
 
-struct Term {
+struct TermStore {
     receiver: mpsc::Receiver<TermMsg>,
     watchdog: WatchdogHandle,
     current_term: u64,
@@ -22,9 +22,9 @@ enum TermMsg {
     Increment,
 }
 
-impl Term {
+impl TermStore {
     fn new(receiver: mpsc::Receiver<TermMsg>, watchdog: WatchdogHandle) -> Self {
-        Term {
+        TermStore {
             receiver,
             watchdog,
             current_term: 0,
@@ -61,15 +61,15 @@ impl Term {
 }
 
 #[derive(Clone)]
-pub struct TermHandle {
+pub struct TermStoreHandle {
     sender: mpsc::Sender<TermMsg>,
 }
 
-impl TermHandle {
+impl TermStoreHandle {
     pub fn new(watchdog: WatchdogHandle) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut term = Term::new(receiver, watchdog);
-        tokio::spawn(async move { term.run().await });
+        let mut term_store = TermStore::new(receiver, watchdog);
+        tokio::spawn(async move { term_store.run().await });
 
         Self { sender }
     }
@@ -103,10 +103,10 @@ impl TermHandle {
     }
 }
 
-impl Default for TermHandle {
+impl Default for TermStoreHandle {
     fn default() -> Self {
         let watchdog = WatchdogHandle::default();
-        TermHandle::new(watchdog)
+        TermStoreHandle::new(watchdog)
     }
 }
 
@@ -116,28 +116,28 @@ mod tests {
 
     #[tokio::test]
     async fn get_term_test() {
-        let term = TermHandle::default();
-        assert_eq!(term.get_term().await, 0);
+        let term_store = TermStoreHandle::default();
+        assert_eq!(term_store.get_term().await, 0);
     }
 
     #[tokio::test]
     async fn set_term_test() {
-        let term = TermHandle::default();
+        let term_store = TermStoreHandle::default();
         let new_term: u64 = 1;
-        term.set_term(new_term).await;
-        assert_eq!(new_term, term.get_term().await);
+        term_store.set_term(new_term).await;
+        assert_eq!(new_term, term_store.get_term().await);
     }
 
     #[tokio::test]
     async fn check_term_test() {
-        let term = TermHandle::default();
-        term.set_term(2).await;
+        let term_store = TermStoreHandle::default();
+        term_store.set_term(2).await;
         let correct_term: u64 = 2;
         let smaller_term: u64 = 1;
         let bigger_term: u64 = 3;
 
-        assert_eq!(term.check_term(correct_term).await, Some(true));
-        assert_eq!(term.check_term(smaller_term).await, Some(false));
-        assert_eq!(term.check_term(bigger_term).await, None);
+        assert_eq!(term_store.check_term(correct_term).await, Some(true));
+        assert_eq!(term_store.check_term(smaller_term).await, Some(false));
+        assert_eq!(term_store.check_term(bigger_term).await, None);
     }
 }
