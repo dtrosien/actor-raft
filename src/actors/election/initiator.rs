@@ -182,6 +182,7 @@ fn calculate_required_votes(nodes_num: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc::test_tools::{start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]
@@ -197,7 +198,7 @@ mod tests {
     async fn get_worker_test() {
         let watchdog = WatchdogHandle::default();
         let term_store = TermStoreHandle::new(watchdog.clone());
-        let config = Config::for_test();
+        let config = Config::for_test().await;
         let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
 
         assert_eq!(
@@ -217,18 +218,31 @@ mod tests {
         let watchdog = WatchdogHandle::default();
         let term_store = TermStoreHandle::new(watchdog.clone());
 
-        let config = Config::for_test();
+        let config = Config::for_test().await;
         let initiator = InitiatorHandle::new(term_store, watchdog, config.clone()).await;
-
-        initiator.start_election().await;
-
         let counter = initiator.get_counter().await;
-        // sleep necessary to make sure that vote is processed before getting it
-        tokio::time::sleep(Duration::from_millis(1)).await;
-        assert_eq!(
-            counter.get_votes_received().await,
-            config.nodes.len() as u64
-        );
+
+        let test_future = async {
+            // sleep necessary to make sure that server is up
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            initiator.start_election().await;
+            // sleep necessary to make sure that vote is processed before getting the count
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+
+        // wait for test future or servers to return
+        tokio::select! {
+            _ = start_test_server(config.nodes[0].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[0].id),
+            _ = start_test_server(config.nodes[1].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[1].id),
+            _ = start_test_server(config.nodes[2].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[2].id),
+            _ = start_test_server(config.nodes[3].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[3].id),
+            _ = test_future => {
+                assert_eq!(
+                    counter.get_votes_received().await,
+                    config.nodes.len() as u64
+                    );
+                }
+        }
     }
 
     #[tokio::test]

@@ -1,28 +1,35 @@
 pub mod client;
 pub mod server;
 
-#[cfg(test)]
 pub mod test_tools {
 
     // Test Utilities //////////////////////////////////////////////////////////////////////////////
-
-    // wrapper for rpc requests, delays request to give tonic server time to start
-    // takes a async function as input
-    // function needs to be inserted as a closure
 
     use crate::raft_rpc::raft_rpc_server::{RaftRpc, RaftRpcServer};
     use crate::raft_rpc::{
         AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
     };
     use crate::rpc::client::Reply;
+    use once_cell::sync::Lazy;
     use std::error::Error;
     use std::future::Future;
     use std::time::Duration;
+    use tokio::sync::Mutex;
     use tonic::transport::Server;
     use tonic::{Request, Response, Status};
 
-    //todo solve problem with parallel calls from and to same ports when testing
+    // global var used to offer unique ports for each rpc call in unit tests starting from port number 50060
+    static GLOBAL_PORT_COUNTER: Lazy<Mutex<u16>> = Lazy::new(|| Mutex::new(50060));
+    // get port from GLOBAL_PORT_COUNTER
+    pub async fn get_test_port() -> u16 {
+        let mut i = GLOBAL_PORT_COUNTER.lock().await;
+        *i += 1;
+        *i
+    }
 
+    // wrapper for rpc requests, delays request to give tonic server time to start
+    // takes a async function as input
+    // function needs to be inserted as a closure
     pub async fn start_test_request<F, Fut>(f: F) -> Result<Reply, Box<dyn Error + Send + Sync>>
     where
         F: Fn() -> Fut,
@@ -35,7 +42,8 @@ pub mod test_tools {
     }
 
     // starts tonic test server for unit tests
-    pub async fn start_test_server<T: RaftRpc>(port: usize, rpc_test_case: T) {
+    //todo: use once_cell also for test servers, to reduce server spawning?
+    pub async fn start_test_server<T: RaftRpc>(port: u16, rpc_test_case: T) {
         let raft_service = RaftRpcServer::new(rpc_test_case);
         let addr = format!("[::1]:{port}").parse().unwrap();
         let result = Server::builder()
@@ -45,6 +53,8 @@ pub mod test_tools {
         // check if server is running
         assert!(result.is_ok());
     }
+
+    // Test Servers/////////////////////////////////////////////////////////////////////////////////
 
     // used for test cases which require true as an answer
     pub struct TestServerTrue {}

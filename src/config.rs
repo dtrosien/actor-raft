@@ -1,3 +1,4 @@
+use crate::rpc::test_tools::get_test_port;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
@@ -30,21 +31,20 @@ impl Config {
             nodes: vec![],
         }
     }
-
-    pub fn for_test() -> Self {
+    pub async fn for_test() -> Self {
         let mut nodes = Vec::new();
         for n in 1..=4 {
             let node = Node {
                 id: n,
                 ip: "[::1]".to_string(),
-                port: (50060 + n) as u16,
+                port: get_test_port().await,
             };
             nodes.push(node)
         }
         Config {
             id: 0,
             ip: "[::1]".to_string(),
-            port: 50060,
+            port: get_test_port().await,
             state_store_path: "".to_string(),
             nodes,
         }

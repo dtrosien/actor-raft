@@ -47,10 +47,12 @@ async fn append_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tonic::{Request, Response, Status};
 
-    use crate::raft_rpc::RequestVoteRequest;
+    use crate::raft_rpc::raft_rpc_server::RaftRpc;
+    use crate::raft_rpc::{AppendEntriesReply, RequestVoteReply, RequestVoteRequest};
     use crate::rpc::test_tools::{
-        start_test_request, start_test_server, TestServerFalse, TestServerTrue,
+        get_test_port, start_test_request, start_test_server, TestServerFalse, TestServerTrue,
     };
 
     #[tokio::test]
@@ -62,7 +64,7 @@ mod tests {
             last_log_term: 0,
         };
         // ports need to be different for each test case since async
-        let port = 50065;
+        let port = get_test_port().await;
         let uri = format!("https://[::1]:{port}");
 
         let serve_future = async { start_test_server(port, TestServerTrue {}).await };
@@ -92,7 +94,7 @@ mod tests {
             last_log_term: 0,
         };
         // ports need to be different for each test case since async
-        let port = 50066;
+        let port = get_test_port().await;
         let uri = format!("https://[::1]:{port}");
 
         let serve_future = async { start_test_server(port, TestServerFalse {}).await };
@@ -122,7 +124,7 @@ mod tests {
             last_log_term: 0,
         };
         // ports need to be different for each test case since async
-        let port = 50067;
+        let port = get_test_port().await;
         let uri = "caseMustPanic".to_string();
 
         let serve_future = async { start_test_server(port, TestServerFalse {}).await };

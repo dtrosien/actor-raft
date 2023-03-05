@@ -3,8 +3,7 @@ use crate::actors::term_store::TermStoreHandle;
 use crate::config::Node;
 use crate::raft_rpc::RequestVoteRequest;
 use crate::rpc;
-use crate::rpc::client::Reply;
-use std::fmt::format;
+
 use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
@@ -63,7 +62,7 @@ impl Worker {
                 self.term_store.check_term(reply.term).await;
                 Some(reply.success_or_granted)
             }
-            Err(_) => Some(true), //todo fix tests
+            Err(_) => Some(false),
         }
     }
 }
@@ -100,6 +99,7 @@ impl WorkerHandle {
 mod tests {
     use super::*;
     use crate::actors::watchdog::WatchdogHandle;
+    use crate::rpc::test_tools::{get_test_port, start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]
@@ -120,14 +120,16 @@ mod tests {
 
     #[tokio::test]
     async fn request_vote_test() {
+        // initialise test setup
         let watchdog = WatchdogHandle::default();
         let term_store = TermStoreHandle::new(watchdog.clone());
         let votes_required: u64 = 3;
         let counter = CounterHandle::new(watchdog, votes_required).await;
+        let port = get_test_port().await;
         let node = Node {
             id: 0,
             ip: "[::1]".to_string(),
-            port: 50070,
+            port,
         };
         let worker = WorkerHandle::new(term_store, counter.clone(), node);
         let request = RequestVoteRequest {
@@ -137,10 +139,22 @@ mod tests {
             last_log_term: 0,
         };
 
+        // start test
         assert_eq!(counter.clone().get_votes_received().await, 0);
-        worker.request_vote(request).await;
-        // sleep necessary to make sure that vote is processed before getting it
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        assert_eq!(counter.clone().get_votes_received().await, 1);
+
+        let test_future = async {
+            // sleep necessary to make sure that server is up
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            worker.request_vote(request).await;
+            // sleep necessary to make sure that vote is processed before getting it
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+
+        tokio::select! {
+            _ = start_test_server(port, TestServerTrue {}) => panic!("server returned first"),
+            _ = test_future => {
+                assert_eq!(counter.clone().get_votes_received().await, 1);
+                }
+        }
     }
 }
