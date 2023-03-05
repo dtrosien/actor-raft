@@ -3,12 +3,13 @@ use crate::actors::election::worker::WorkerHandle;
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::{Config, Node};
+use crate::raft_rpc::RequestVoteRequest;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
 struct Initiator {
     receiver: mpsc::Receiver<InitiatorMsg>,
-    term: TermStoreHandle,
+    term_store: TermStoreHandle,
     counter: CounterHandle,
     workers: BTreeMap<u64, WorkerHandle>,
     voted_for: Option<u64>,
@@ -57,7 +58,7 @@ impl Initiator {
             .collect();
         Initiator {
             receiver,
-            term,
+            term_store: term,
             counter,
             workers,
             voted_for: None,
@@ -94,11 +95,21 @@ impl Initiator {
 
     async fn start_election(&mut self) {
         //increment current term
-        self.term.increment_term().await;
+        self.term_store.increment_term().await;
         //vote for self
         self.voted_for = Some(self.id);
+
+        //build request
+        let request = RequestVoteRequest {
+            term: self.term_store.get_term().await,
+            candidate_id: self.id,
+            last_log_index: self.last_log_index,
+            last_log_term: self.last_log_term,
+        };
+
+        //send request to worker
         for worker in self.workers.iter() {
-            worker.1.request_vote().await;
+            worker.1.request_vote(request.clone()).await;
         }
     }
 
@@ -171,22 +182,23 @@ fn calculate_required_votes(nodes_num: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn get_voted_for_test() {
         let watchdog = WatchdogHandle::default();
-        let term = TermStoreHandle::new(watchdog.clone());
+        let term_store = TermStoreHandle::new(watchdog.clone());
         let config = Config::new();
-        let initiator = InitiatorHandle::new(term, watchdog, config).await;
+        let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
         assert_eq!(initiator.get_voted_for().await, None);
     }
 
     #[tokio::test]
     async fn get_worker_test() {
         let watchdog = WatchdogHandle::default();
-        let term = TermStoreHandle::new(watchdog.clone());
+        let term_store = TermStoreHandle::new(watchdog.clone());
         let config = Config::for_test();
-        let initiator = InitiatorHandle::new(term, watchdog, config).await;
+        let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
 
         assert_eq!(
             initiator
@@ -203,15 +215,16 @@ mod tests {
     #[tokio::test]
     async fn start_election_test() {
         let watchdog = WatchdogHandle::default();
-        let term = TermStoreHandle::new(watchdog.clone());
+        let term_store = TermStoreHandle::new(watchdog.clone());
 
         let config = Config::for_test();
-        let initiator = InitiatorHandle::new(term, watchdog, config.clone()).await;
+        let initiator = InitiatorHandle::new(term_store, watchdog, config.clone()).await;
 
         initiator.start_election().await;
 
         let counter = initiator.get_counter().await;
-
+        // sleep necessary to make sure that vote is processed before getting it
+        tokio::time::sleep(Duration::from_millis(1)).await;
         assert_eq!(
             counter.get_votes_received().await,
             config.nodes.len() as u64

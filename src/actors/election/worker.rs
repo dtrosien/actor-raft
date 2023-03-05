@@ -4,6 +4,7 @@ use crate::config::Node;
 use crate::raft_rpc::RequestVoteRequest;
 use crate::rpc;
 use crate::rpc::client::Reply;
+use std::fmt::format;
 use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
@@ -14,7 +15,7 @@ struct Worker {
 }
 
 enum WorkerMsg {
-    RequestVote,
+    RequestVote { request: RequestVoteRequest },
     GetNode { respond_to: oneshot::Sender<Node> },
 }
 
@@ -41,8 +42,8 @@ impl Worker {
 
     async fn handle_message(&mut self, msg: WorkerMsg) {
         match msg {
-            WorkerMsg::RequestVote => {
-                let vote = self.request_vote().await;
+            WorkerMsg::RequestVote { request } => {
+                let vote = self.request_vote(request).await;
                 self.counter.register_vote(vote).await;
             }
             WorkerMsg::GetNode { respond_to } => {
@@ -51,19 +52,14 @@ impl Worker {
         }
     }
 
-    async fn request_vote(&self) -> Option<bool> {
-        //todo adjust input params
-        let request = RequestVoteRequest {
-            term: 0,
-            candidate_id: 0,
-            last_log_index: 0,
-            last_log_term: 0,
-        };
-        let uri = "".to_string();
+    async fn request_vote(&self, request: RequestVoteRequest) -> Option<bool> {
+        let ip = self.node.ip.clone();
+        let port = self.node.port;
+        let uri = format!("https://{ip}:{port}");
 
         match rpc::client::request_vote(uri, request).await {
             Ok(reply) => {
-                //todo term check here correct?
+                // this call is non blocking and might fire a term error
                 self.term_store.check_term(reply.term).await;
                 Some(reply.success_or_granted)
             }
@@ -94,8 +90,8 @@ impl WorkerHandle {
         recv.await.expect("Actor task has been killed")
     }
 
-    pub async fn request_vote(&self) {
-        let msg = WorkerMsg::RequestVote;
+    pub async fn request_vote(&self, request: RequestVoteRequest) {
+        let msg = WorkerMsg::RequestVote { request };
         let _ = self.sender.send(msg).await;
     }
 }
@@ -114,7 +110,7 @@ mod tests {
         let counter = CounterHandle::new(watchdog, votes_required).await;
         let node = Node {
             id: 0,
-            fqdn: "".to_string(),
+            ip: "".to_string(),
             port: 0,
         };
         let worker = WorkerHandle::new(term_store, counter, node.clone());
@@ -130,15 +126,21 @@ mod tests {
         let counter = CounterHandle::new(watchdog, votes_required).await;
         let node = Node {
             id: 0,
-            fqdn: "".to_string(),
-            port: 0,
+            ip: "[::1]".to_string(),
+            port: 50070,
         };
         let worker = WorkerHandle::new(term_store, counter.clone(), node);
+        let request = RequestVoteRequest {
+            term: 0,
+            candidate_id: 0,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
 
         assert_eq!(counter.clone().get_votes_received().await, 0);
-        worker.request_vote().await;
+        worker.request_vote(request).await;
         // sleep necessary to make sure that vote is processed before getting it
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        tokio::time::sleep(Duration::from_millis(5)).await;
         assert_eq!(counter.clone().get_votes_received().await, 1);
     }
 }
