@@ -1,3 +1,4 @@
+use crate::db::RaftDb;
 use crate::raft_rpc::append_entries_request::Entry;
 use tokio::sync::{mpsc, oneshot};
 
@@ -7,6 +8,7 @@ struct LogStore {
     last_log_term: u64,
     previous_log_index: u64,
     previous_log_term: u64,
+    db: RaftDb,
 }
 
 enum LogStoreMsg {
@@ -19,13 +21,16 @@ enum LogStoreMsg {
 }
 
 impl LogStore {
-    fn new(receiver: mpsc::Receiver<LogStoreMsg>) -> Self {
+    fn new(receiver: mpsc::Receiver<LogStoreMsg>, db_path: String) -> Self {
+        let db = RaftDb::new(db_path);
+        let (last_log_index, last_log_term) = db.get_last_log_index_and_term(); //todo read necessary or set to 0?
         LogStore {
             receiver,
-            last_log_index: 0, //todo proper init
-            last_log_term: 0,
+            last_log_index,
+            last_log_term,
             previous_log_index: 0,
             previous_log_term: 0,
+            db,
         }
     }
 
@@ -65,9 +70,9 @@ pub struct LogStoreHandle {
 }
 
 impl LogStoreHandle {
-    pub fn new() -> Self {
+    pub fn new(db_path: String) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = LogStore::new(receiver);
+        let mut actor = LogStore::new(receiver, db_path);
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -112,19 +117,21 @@ impl LogStoreHandle {
     }
 }
 
-impl Default for LogStoreHandle {
-    fn default() -> Self {
-        LogStoreHandle::new()
-    }
-}
+// impl Default for LogStoreHandle {
+//     fn default() -> Self {
+//         LogStoreHandle::new()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
 
     #[tokio::test]
     async fn get_last_log_index_test() {
-        let log_store = LogStoreHandle::new();
+        let config = Config::for_test();
+        let log_store = LogStoreHandle::new(config.await.db_path);
         assert_eq!(log_store.get_last_log_index().await, 0);
     }
 }

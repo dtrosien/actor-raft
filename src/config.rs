@@ -10,7 +10,7 @@ pub struct Config {
     pub id: u64,
     pub ip: String,
     pub port: u16,
-    pub state_store_path: String,
+    pub db_path: String,
     pub nodes: Vec<Node>,
 }
 
@@ -27,7 +27,7 @@ impl Config {
             id: 0,
             ip: "".to_string(),
             port: 0,
-            state_store_path: "".to_string(),
+            db_path: "/Users/domo/CLionProjects/actor-raft/raft-db".to_string(),
             nodes: vec![],
         }
     }
@@ -45,7 +45,7 @@ impl Config {
             id: 0,
             ip: "[::1]".to_string(),
             port: get_test_port().await,
-            state_store_path: "".to_string(),
+            db_path: "/Users/domo/CLionProjects/actor-raft/log-db".to_string(),
             nodes,
         }
     }
