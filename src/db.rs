@@ -79,6 +79,11 @@ impl RaftDb {
         })
     }
 
+    pub fn clear_db(&mut self) -> Result<(), Box<dyn Error>> {
+        self.db.clear()?;
+        Ok(())
+    }
+
     //todo rename? split? move to log store?
     pub fn get_last_log_index_and_term(&self) -> (u64, u64) {
         match self.read_last_entry() {
@@ -107,4 +112,97 @@ impl RaftDb {
     // // block until all operations are stable on disk
     // // (flush_async also available to get a Future)
     // tree.flush_async().await?;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use once_cell::sync::Lazy;
+    use tokio::sync::Mutex;
+
+    static TEST_DB: Lazy<Mutex<RaftDb>> =
+        Lazy::new(|| Mutex::new(RaftDb::new("test-db".to_string())));
+
+    #[tokio::test]
+    async fn term_test() {
+        let current_term = 1_u64;
+        let mut db = TEST_DB.lock().await;
+        db.clear_db().unwrap();
+
+        db.store_current_term(current_term).await.unwrap();
+        assert_eq!(current_term, db.read_current_term().unwrap().unwrap());
+    }
+
+    #[tokio::test]
+    async fn voted_for_test() {
+        let voted_for = 29978769_u64;
+        let mut db = TEST_DB.lock().await;
+        db.clear_db().unwrap();
+
+        db.store_voted_for(voted_for).await.unwrap();
+        assert_eq!(voted_for, db.read_voted_for().unwrap().unwrap());
+    }
+
+    #[tokio::test]
+    async fn entry_test() {
+        let entry1 = Entry {
+            index: 1,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let entry2 = Entry {
+            index: 2,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let entry3 = Entry {
+            index: 3,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let mut db = TEST_DB.lock().await;
+        db.clear_db().unwrap();
+
+        db.store_entry(entry3.clone()).await.unwrap();
+        db.store_entry(entry1.clone()).await.unwrap();
+        db.store_entry(entry2.clone()).await.unwrap();
+        assert_eq!(entry3.clone(), db.read_last_entry().unwrap().unwrap());
+        assert_eq!(entry1.clone(), db.read_entry(1).unwrap().unwrap());
+        assert_eq!(entry2.clone(), db.read_entry(2).unwrap().unwrap());
+    }
+
+    #[tokio::test]
+    async fn entries_test() {
+        //todo implement
+    }
+
+    #[tokio::test]
+    async fn last_log_index_and_term_test() {
+        let entry1 = Entry {
+            index: 1,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let entry2 = Entry {
+            index: 2,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let entry3 = Entry {
+            index: 3,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let mut db = TEST_DB.lock().await;
+        db.clear_db().unwrap();
+
+        db.store_entry(entry3.clone()).await.unwrap();
+        db.store_entry(entry1.clone()).await.unwrap();
+        db.store_entry(entry2.clone()).await.unwrap();
+
+        assert_eq!(
+            (entry3.index, entry3.term),
+            db.get_last_log_index_and_term()
+        );
+    }
 }
