@@ -1,5 +1,5 @@
 use crate::raft_rpc::append_entries_request::Entry;
-use sled::Db;
+use sled::{Db, IVec};
 use std::error::Error;
 
 pub struct RaftDb {
@@ -46,24 +46,33 @@ impl RaftDb {
         })
     }
 
-    pub async fn store_entry(&self, entry: Entry) -> Result<(), Box<dyn Error>> {
-        let bytes = bincode::serialize(&entry)?;
-        self.db.insert(&entry.index.to_ne_bytes(), bytes)?;
+    pub async fn store_entry(&self, entry: Entry) -> Result<Option<Entry>, Box<dyn Error>> {
+        let b_entry = bincode::serialize(&entry)?;
+        let b_old_entry = self.db.insert(entry.index.to_ne_bytes(), b_entry)?;
         self.db.flush_async().await?;
-        Ok(())
+
+        let old_entry = match b_old_entry {
+            None => None,
+            Some(b_old_entry) => Some(bincode::deserialize(&b_old_entry)?),
+        };
+        Ok(old_entry)
     }
 
-    pub async fn store_entries(&self, entry: Vec<Entry>) -> Result<(), Box<dyn Error>> {
-        //todo implement
-
+    pub async fn store_entries(&self, entries: Vec<Entry>) -> Result<(), Box<dyn Error>> {
+        let mut batch = sled::Batch::default();
+        for entry in entries {
+            let b_entry = bincode::serialize(&entry)?;
+            batch.insert(&entry.index.to_ne_bytes(), b_entry);
+        }
+        self.db.apply_batch(batch)?;
         self.db.flush_async().await?;
         Ok(())
     }
 
     pub fn read_entry(&self, index: u64) -> Result<Option<Entry>, Box<dyn Error>> {
-        Ok(match self.db.get(&index.to_ne_bytes())? {
-            Some(bytes) => {
-                let entry: Entry = bincode::deserialize(&bytes)?;
+        Ok(match self.db.get(index.to_ne_bytes())? {
+            Some(b_entry) => {
+                let entry: Entry = bincode::deserialize(&b_entry)?;
                 Some(entry)
             }
             None => None,
@@ -71,16 +80,39 @@ impl RaftDb {
     }
     pub fn read_last_entry(&self) -> Result<Option<Entry>, Box<dyn Error>> {
         Ok(match self.db.last()? {
-            Some(bytes) => {
-                let entry: Entry = bincode::deserialize(&bytes.1)?;
+            Some(b_entry) => {
+                let entry: Entry = bincode::deserialize(&b_entry.1)?;
                 Some(entry)
             }
             None => None,
         })
     }
 
-    pub fn clear_db(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn delete_entry(&self, index: u64) -> Result<(), Box<dyn Error>> {
+        self.db.remove(index.to_ne_bytes())?;
+        self.db.flush_async().await?;
+        Ok(())
+    }
+
+    pub async fn delete_entries(
+        &self,
+        first_index: u64,
+        last_index: u64,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut batch = sled::Batch::default();
+
+        for index in first_index..=last_index {
+            batch.remove(&index.to_ne_bytes());
+        }
+
+        self.db.apply_batch(batch)?;
+        self.db.flush_async().await?;
+        Ok(())
+    }
+
+    pub async fn clear_db(&mut self) -> Result<(), Box<dyn Error>> {
         self.db.clear()?;
+        self.db.flush_async().await?;
         Ok(())
     }
 
@@ -94,24 +126,6 @@ impl RaftDb {
             Err(_) => (0, 0),
         }
     }
-
-    // insert and get, similar to std's BTreeMap
-    // tree.insert("key", "value")?;
-    //
-    // assert_eq!(tree.get(&"key")?, Some(sled::IVec::from("value")),);
-    //
-    // // range queries
-    // for kv_result in tree.range("key_1".."key_9") {}
-    //
-    // // deletion
-    // let old_value = tree.remove(&"key")?;
-    //
-    // // atomic compare and swap
-    // tree.compare_and_swap("key", Some("current_value"), Some("new_value"))?;
-    //
-    // // block until all operations are stable on disk
-    // // (flush_async also available to get a Future)
-    // tree.flush_async().await?;
 }
 
 #[cfg(test)]
@@ -127,7 +141,7 @@ mod tests {
     async fn term_test() {
         let current_term = 1_u64;
         let mut db = TEST_DB.lock().await;
-        db.clear_db().unwrap();
+        db.clear_db().await.unwrap();
 
         db.store_current_term(current_term).await.unwrap();
         assert_eq!(current_term, db.read_current_term().unwrap().unwrap());
@@ -137,7 +151,7 @@ mod tests {
     async fn voted_for_test() {
         let voted_for = 29978769_u64;
         let mut db = TEST_DB.lock().await;
-        db.clear_db().unwrap();
+        db.clear_db().await.unwrap();
 
         db.store_voted_for(voted_for).await.unwrap();
         assert_eq!(voted_for, db.read_voted_for().unwrap().unwrap());
@@ -160,8 +174,13 @@ mod tests {
             term: 21313131,
             payload: "some payload".to_string(),
         };
+        let entry4 = Entry {
+            index: 3,
+            term: 1111111,
+            payload: "some payload".to_string(),
+        };
         let mut db = TEST_DB.lock().await;
-        db.clear_db().unwrap();
+        db.clear_db().await.unwrap();
 
         db.store_entry(entry3.clone()).await.unwrap();
         db.store_entry(entry1.clone()).await.unwrap();
@@ -169,11 +188,39 @@ mod tests {
         assert_eq!(entry3.clone(), db.read_last_entry().unwrap().unwrap());
         assert_eq!(entry1.clone(), db.read_entry(1).unwrap().unwrap());
         assert_eq!(entry2.clone(), db.read_entry(2).unwrap().unwrap());
+
+        //test overwrite
+        let old_entry = db.store_entry(entry4.clone()).await.unwrap();
+        assert_eq!(entry3.clone(), old_entry.unwrap());
+        assert_eq!(entry4.clone(), db.read_last_entry().unwrap().unwrap());
     }
 
     #[tokio::test]
     async fn entries_test() {
-        //todo implement
+        let entry1 = Entry {
+            index: 1,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let entry2 = Entry {
+            index: 2,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let entry3 = Entry {
+            index: 3,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let entries = vec![entry1.clone(), entry2.clone(), entry3.clone()];
+        let mut db = TEST_DB.lock().await;
+        db.clear_db().await.unwrap();
+
+        db.store_entries(entries).await.unwrap();
+
+        assert_eq!(entry3.clone(), db.read_last_entry().unwrap().unwrap());
+        assert_eq!(entry1.clone(), db.read_entry(1).unwrap().unwrap());
+        assert_eq!(entry2.clone(), db.read_entry(2).unwrap().unwrap());
     }
 
     #[tokio::test]
@@ -194,7 +241,7 @@ mod tests {
             payload: "some payload".to_string(),
         };
         let mut db = TEST_DB.lock().await;
-        db.clear_db().unwrap();
+        db.clear_db().await.unwrap();
 
         db.store_entry(entry3.clone()).await.unwrap();
         db.store_entry(entry1.clone()).await.unwrap();
