@@ -13,14 +13,17 @@ impl RaftDb {
         }
     }
 
-    pub async fn store_current_term(&self, current_term: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn store_current_term(
+        &self,
+        current_term: u64,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.db
             .insert(b"current_term", &current_term.to_ne_bytes())?;
         self.db.flush_async().await?;
         Ok(())
     }
 
-    pub fn read_current_term(&self) -> Result<Option<u64>, Box<dyn Error>> {
+    pub fn read_current_term(&self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.get(b"current_term")? {
             Some(current_term) => {
                 let current_term: u64 = bincode::deserialize(&current_term)?;
@@ -30,13 +33,16 @@ impl RaftDb {
         })
     }
 
-    pub async fn store_voted_for(&self, voted_for: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn store_voted_for(
+        &self,
+        voted_for: u64,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.db.insert(b"voted_for", &voted_for.to_ne_bytes())?;
         self.db.flush_async().await?;
         Ok(())
     }
 
-    pub fn read_voted_for(&self) -> Result<Option<u64>, Box<dyn Error>> {
+    pub fn read_voted_for(&self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.get(b"voted_for")? {
             Some(voted_for) => {
                 let voted_for: u64 = bincode::deserialize(&voted_for)?;
@@ -46,7 +52,10 @@ impl RaftDb {
         })
     }
 
-    pub async fn store_entry(&self, entry: Entry) -> Result<Option<Entry>, Box<dyn Error>> {
+    pub async fn store_entry_and_flush(
+        &self,
+        entry: Entry,
+    ) -> Result<Option<Entry>, Box<dyn Error + Send + Sync>> {
         let b_entry = bincode::serialize(&entry)?;
         let b_old_entry = self.db.insert(entry.index.to_ne_bytes(), b_entry)?;
         self.db.flush_async().await?;
@@ -58,7 +67,24 @@ impl RaftDb {
         Ok(old_entry)
     }
 
-    pub async fn store_entries(&self, entries: Vec<Entry>) -> Result<(), Box<dyn Error>> {
+    pub async fn store_entry(
+        &self,
+        entry: Entry,
+    ) -> Result<Option<Entry>, Box<dyn Error + Send + Sync>> {
+        let b_entry = bincode::serialize(&entry)?;
+        let b_old_entry = self.db.insert(entry.index.to_ne_bytes(), b_entry)?;
+
+        let old_entry = match b_old_entry {
+            None => None,
+            Some(b_old_entry) => Some(bincode::deserialize(&b_old_entry)?),
+        };
+        Ok(old_entry)
+    }
+
+    pub async fn store_entries(
+        &self,
+        entries: Vec<Entry>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let mut batch = sled::Batch::default();
         for entry in entries {
             let b_entry = bincode::serialize(&entry)?;
@@ -69,7 +95,7 @@ impl RaftDb {
         Ok(())
     }
 
-    pub fn read_entry(&self, index: u64) -> Result<Option<Entry>, Box<dyn Error>> {
+    pub fn read_entry(&self, index: u64) -> Result<Option<Entry>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.get(index.to_ne_bytes())? {
             Some(b_entry) => {
                 let entry: Entry = bincode::deserialize(&b_entry)?;
@@ -78,7 +104,7 @@ impl RaftDb {
             None => None,
         })
     }
-    pub fn read_last_entry(&self) -> Result<Option<Entry>, Box<dyn Error>> {
+    pub fn read_last_entry(&self) -> Result<Option<Entry>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.last()? {
             Some(b_entry) => {
                 let entry: Entry = bincode::deserialize(&b_entry.1)?;
@@ -88,7 +114,20 @@ impl RaftDb {
         })
     }
 
-    pub async fn delete_entry(&self, index: u64) -> Result<(), Box<dyn Error>> {
+    pub fn read_previous_entry(
+        &self,
+        index: u64,
+    ) -> Result<Option<Entry>, Box<dyn Error + Send + Sync>> {
+        Ok(match self.db.get_lt(index.to_ne_bytes())? {
+            Some(b_entry) => {
+                let entry: Entry = bincode::deserialize(&b_entry.1)?;
+                Some(entry)
+            }
+            None => None,
+        })
+    }
+
+    pub async fn delete_entry(&self, index: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.db.remove(index.to_ne_bytes())?;
         self.db.flush_async().await?;
         Ok(())
@@ -110,21 +149,15 @@ impl RaftDb {
         Ok(())
     }
 
-    pub async fn clear_db(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn clear_db(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.db.clear()?;
         self.db.flush_async().await?;
         Ok(())
     }
 
-    //todo rename? split? move to log store?
-    pub fn get_last_log_index_and_term(&self) -> (u64, u64) {
-        match self.read_last_entry() {
-            Ok(result) => match result {
-                None => (0, 0),
-                Some(entry) => (entry.index, entry.term),
-            },
-            Err(_) => (0, 0),
-        }
+    pub async fn flush_entries(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        self.db.flush_async().await?;
+        Ok(())
     }
 }
 
@@ -135,7 +168,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     static TEST_DB: Lazy<Mutex<RaftDb>> =
-        Lazy::new(|| Mutex::new(RaftDb::new("test-db".to_string())));
+        Lazy::new(|| Mutex::new(RaftDb::new("databases/test-db".to_string())));
 
     #[tokio::test]
     async fn term_test() {
@@ -182,17 +215,31 @@ mod tests {
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();
 
-        db.store_entry(entry3.clone()).await.unwrap();
-        db.store_entry(entry1.clone()).await.unwrap();
-        db.store_entry(entry2.clone()).await.unwrap();
+        db.store_entry_and_flush(entry3.clone()).await.unwrap();
+        db.store_entry_and_flush(entry1.clone()).await.unwrap();
+        db.store_entry_and_flush(entry2.clone()).await.unwrap();
         assert_eq!(entry3.clone(), db.read_last_entry().unwrap().unwrap());
         assert_eq!(entry1.clone(), db.read_entry(1).unwrap().unwrap());
         assert_eq!(entry2.clone(), db.read_entry(2).unwrap().unwrap());
 
         //test overwrite
-        let old_entry = db.store_entry(entry4.clone()).await.unwrap();
+        let old_entry = db.store_entry_and_flush(entry4.clone()).await.unwrap();
         assert_eq!(entry3.clone(), old_entry.unwrap());
         assert_eq!(entry4.clone(), db.read_last_entry().unwrap().unwrap());
+    }
+
+    #[tokio::test]
+    async fn manual_flush_entry_test() {
+        let entry1 = Entry {
+            index: 1,
+            term: 21313131,
+            payload: "some payload".to_string(),
+        };
+        let mut db = TEST_DB.lock().await;
+        db.clear_db().await.unwrap();
+        db.store_entry(entry1.clone()).await.unwrap();
+        db.flush_entries().await.unwrap();
+        assert_eq!(entry1, db.read_entry(1).unwrap().unwrap());
     }
 
     #[tokio::test]
@@ -224,7 +271,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn last_log_index_and_term_test() {
+    async fn previous_entry_test() {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
@@ -243,13 +290,11 @@ mod tests {
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();
 
-        db.store_entry(entry3.clone()).await.unwrap();
-        db.store_entry(entry1.clone()).await.unwrap();
-        db.store_entry(entry2.clone()).await.unwrap();
+        db.store_entry_and_flush(entry3.clone()).await.unwrap();
+        db.store_entry_and_flush(entry1.clone()).await.unwrap();
+        db.store_entry_and_flush(entry2.clone()).await.unwrap();
 
-        assert_eq!(
-            (entry3.index, entry3.term),
-            db.get_last_log_index_and_term()
-        );
+        assert_eq!(entry2, db.read_previous_entry(3).unwrap().unwrap());
+        assert_eq!(entry1, db.read_previous_entry(2).unwrap().unwrap());
     }
 }

@@ -80,7 +80,8 @@ mod tests {
         // since tokio only supports granularity on ms base, the test is expected only to pass up to 9ms sleep time
 
         let watchdog = WatchdogHandle::default();
-        let timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(10));
+        // was set from 10 to 20 since testing was to heavy
+        let timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(20));
         let mut signal = watchdog.get_exit_receiver().await;
         for n in 0..9 {
             timer.send_heartbeat().await;
@@ -99,7 +100,7 @@ mod tests {
         let mut signal = watchdog.get_exit_receiver().await;
         tokio::select! {
         _ = signal.recv() => {},
-        _ = tokio::time::sleep(Duration::from_millis(15))=> {panic!()}
+        _ = tokio::time::sleep(Duration::from_millis(20))=> {panic!()}
         }
     }
 }

@@ -1,7 +1,5 @@
 use crate::rpc::test_tools::get_test_port;
 use serde::{Deserialize, Serialize};
-use std::error::Error;
-use std::fs;
 
 //todo use config lib like i.e config-rs
 
@@ -27,7 +25,7 @@ impl Config {
             id: 0,
             ip: "".to_string(),
             port: 0,
-            db_path: "/Users/domo/CLionProjects/actor-raft/raft-db".to_string(),
+            db_path: "databases/log-db".to_string(),
             nodes: vec![],
         }
     }
@@ -45,7 +43,7 @@ impl Config {
             id: 0,
             ip: "[::1]".to_string(),
             port: get_test_port().await,
-            db_path: "/Users/domo/CLionProjects/actor-raft/log-db".to_string(),
+            db_path: "databases/log-db".to_string(),
             nodes,
         }
     }

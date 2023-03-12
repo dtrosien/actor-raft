@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="CPP_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/log-db" />
+      <excludeFolder url="file://$MODULE_DIR$/log-test-db" />
+      <excludeFolder url="file://$MODULE_DIR$/test-db" />
+      <excludeFolder url="file://$MODULE_DIR$/databases/test-db_1" />
+      <excludeFolder url="file://$MODULE_DIR$/databases/test-db_2" />
+      <excludeFolder url="file://$MODULE_DIR$/databases/test-db_3" />
+      <excludeFolder url="file://$MODULE_DIR$/databases/test-db_4" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>
