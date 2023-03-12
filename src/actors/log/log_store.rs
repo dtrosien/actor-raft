@@ -128,7 +128,7 @@ impl LogStore {
         }
 
         //todo send trigger to replicator or executor
-        //todo send updated last log meta to election initiator
+        //todo send updated last log meta to election initiator or initiator reads the values?
     }
 
     async fn read_last_entry(&self) -> Option<Entry> {
