@@ -26,9 +26,11 @@ enum LogStoreMsg {
         respond_to: oneshot::Sender<u64>,
     },
     AppendEntry {
+        respond_to: oneshot::Sender<Option<u64>>,
         entry: Entry,
     },
     AppendEntries {
+        respond_to: oneshot::Sender<Vec<Option<u64>>>,
         entries: Vec<Entry>,
     },
     ReadLastEntry {
@@ -73,8 +75,15 @@ impl LogStore {
             LogStoreMsg::GetPreviousLogTerm { respond_to } => {
                 let _ = respond_to.send(self.previous_log_term);
             }
-            LogStoreMsg::AppendEntry { entry } => self.append_entry_and_flush(entry).await,
-            LogStoreMsg::AppendEntries { entries } => self.append_entries_and_flush(entries).await,
+            LogStoreMsg::AppendEntry { respond_to, entry } => {
+                let _ = respond_to.send(self.append_entry_and_flush(entry).await);
+            }
+            LogStoreMsg::AppendEntries {
+                respond_to,
+                entries,
+            } => {
+                let _ = respond_to.send(self.append_entries_and_flush(entries).await);
+            }
             LogStoreMsg::ReadLastEntry { respond_to } => {
                 let _ = respond_to.send(self.read_last_entry().await);
             }
@@ -82,20 +91,24 @@ impl LogStore {
         }
     }
 
-    async fn append_entries_and_flush(&mut self, entries: Vec<Entry>) {
+    //todo change return to Vec<option<u64>> like with singe entry
+    async fn append_entries_and_flush(&mut self, entries: Vec<Entry>) -> Vec<Option<u64>> {
+        let mut reply = Vec::new();
         for entry in entries {
-            self.append_entry(entry).await;
+            reply.push(self.append_entry(entry).await);
         }
-        self.db.flush_entries().await.expect("Database corrupted")
+        self.db.flush_entries().await.expect("Database corrupted");
+        reply
     }
 
-    async fn append_entry_and_flush(&mut self, entry: Entry) {
-        self.append_entry(entry).await;
+    async fn append_entry_and_flush(&mut self, entry: Entry) -> Option<u64> {
+        let index = self.append_entry(entry).await;
         self.db.flush_entries().await.expect("Database corrupted");
+        index
     }
 
     // covers step 3. and 4. of the append entries rpc in the raft paper
-    async fn append_entry(&mut self, entry: Entry) {
+    async fn append_entry(&mut self, entry: Entry) -> Option<u64> {
         let entry_term = entry.term;
         let entry_index = entry.index;
         //update previous entry meta data
@@ -106,28 +119,32 @@ impl LogStore {
         self.last_log_term = entry_term;
 
         //write to db
-        if let Ok(Some(old_entry)) = self.db.store_entry(entry).await {
-            // if an old entry exists with the same index but different term, delete it and all following entries
-            if entry_term.ne(&old_entry.term) {
-                //todo: think of better error handling for last index, just dropping complete db is not possible (commit index etc)
-                let last_index = self
-                    .db
-                    .read_last_entry()
-                    .expect("Error reading DB")
-                    .expect("Error: last index is none")
-                    .index;
-                // delete all following entries (the current one was already exchanged)
-                self.db
-                    .delete_entries(entry_index + 1, last_index)
-                    .await
-                    .expect("Error when deleting wrong entries: must not happen");
-                // correct previous entry meta data
-                (self.previous_log_index, self.previous_log_term) =
-                    unwrap_index_and_term(self.db.read_previous_entry(entry_index));
-            }
-        }
 
-        //todo send trigger to replicator or executor
+        match self.db.store_entry(entry).await {
+            Ok(result) => {
+                if let Some(old_entry) = result {
+                    if entry_term.ne(&old_entry.term) {
+                        //todo: think of better error handling for last index, just dropping complete db is not possible (commit index etc)
+                        let last_index = self
+                            .db
+                            .read_last_entry()
+                            .expect("Error reading DB")
+                            .expect("Error: last index is none")
+                            .index;
+                        // delete all following entries (the current one was already exchanged)
+                        self.db
+                            .delete_entries(entry_index + 1, last_index)
+                            .await
+                            .expect("Error when deleting wrong entries: must not happen");
+                        // correct previous entry meta data
+                        (self.previous_log_index, self.previous_log_term) =
+                            unwrap_index_and_term(self.db.read_previous_entry(entry_index));
+                    }
+                }
+                Some(entry_index)
+            }
+            Err(_) => None,
+        }
         //todo send updated last log meta to election initiator or initiator reads the values?
     }
 
@@ -175,14 +192,24 @@ impl LogStoreHandle {
         Self { sender }
     }
 
-    pub async fn append_entry(&self, entry: Entry) {
-        let msg = LogStoreMsg::AppendEntry { entry };
+    pub async fn append_entry(&self, entry: Entry) -> Option<u64> {
+        let (send, recv) = oneshot::channel();
+        let msg = LogStoreMsg::AppendEntry {
+            respond_to: send,
+            entry,
+        };
         let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
     }
 
-    pub async fn append_entries(&self, entries: Vec<Entry>) {
-        let msg = LogStoreMsg::AppendEntries { entries };
+    pub async fn append_entries(&self, entries: Vec<Entry>) -> Vec<Option<u64>> {
+        let (send, recv) = oneshot::channel();
+        let msg = LogStoreMsg::AppendEntries {
+            respond_to: send,
+            entries,
+        };
         let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
     }
 
     pub async fn read_last_entry(&self) -> Option<Entry> {
@@ -279,8 +306,8 @@ mod tests {
             leader_commit: 0,
             payload: "some payload".to_string(),
         };
-        log_store.append_entry(entry4.clone()).await;
-
+        let index = log_store.append_entry(entry4.clone()).await;
+        assert_eq!(entry4.clone().index, index.unwrap());
         assert_eq!(entry4, log_store.read_last_entry().await.unwrap());
         assert_eq!(log_store.get_last_log_index().await, 2);
         assert_eq!(log_store.get_previous_log_index().await, 1);
