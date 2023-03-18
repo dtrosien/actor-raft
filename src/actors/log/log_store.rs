@@ -1,5 +1,6 @@
 use crate::db::RaftDb;
 use crate::raft_rpc::append_entries_request::Entry;
+use std::collections::VecDeque;
 use std::error::Error;
 use tokio::sync::{mpsc, oneshot};
 
@@ -30,8 +31,8 @@ enum LogStoreMsg {
         entry: Entry,
     },
     AppendEntries {
-        respond_to: oneshot::Sender<Vec<Option<u64>>>,
-        entries: Vec<Entry>,
+        respond_to: oneshot::Sender<VecDeque<Option<u64>>>,
+        entries: VecDeque<Entry>,
     },
     ReadLastEntry {
         respond_to: oneshot::Sender<Option<Entry>>,
@@ -92,10 +93,13 @@ impl LogStore {
     }
 
     //todo change return to Vec<option<u64>> like with singe entry
-    async fn append_entries_and_flush(&mut self, entries: Vec<Entry>) -> Vec<Option<u64>> {
-        let mut reply = Vec::new();
+    async fn append_entries_and_flush(
+        &mut self,
+        entries: VecDeque<Entry>,
+    ) -> VecDeque<Option<u64>> {
+        let mut reply = VecDeque::new();
         for entry in entries {
-            reply.push(self.append_entry(entry).await);
+            reply.push_back(self.append_entry(entry).await);
         }
         self.db.flush_entries().await.expect("Database corrupted");
         reply
@@ -164,7 +168,7 @@ impl LogStore {
         self.previous_log_index = 0;
         self.last_log_term = 0;
         self.last_log_index = 0;
-        //todo trigger executor to reset commit
+        //todo trigger executor to reset commit?
     }
 }
 
@@ -202,7 +206,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
-    pub async fn append_entries(&self, entries: Vec<Entry>) -> Vec<Option<u64>> {
+    pub async fn append_entries(&self, entries: VecDeque<Entry>) -> VecDeque<Option<u64>> {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::AppendEntries {
             respond_to: send,
@@ -290,8 +294,8 @@ mod tests {
             leader_commit: 0,
             payload: "some payload".to_string(),
         };
-        let entries = vec![entry1.clone(), entry2.clone(), entry3.clone()];
-        log_store.append_entries(entries).await;
+        let entries = VecDeque::from(vec![entry1.clone(), entry2.clone(), entry3.clone()]);
+        let idices = log_store.append_entries(entries).await;
 
         assert_eq!(entry3, log_store.read_last_entry().await.unwrap());
         assert_eq!(log_store.get_last_log_index().await, 3);
