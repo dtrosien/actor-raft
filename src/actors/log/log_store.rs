@@ -295,15 +295,21 @@ mod tests {
             payload: "some payload".to_string(),
         };
         let entries = VecDeque::from(vec![entry1.clone(), entry2.clone(), entry3.clone()]);
-        let idices = log_store.append_entries(entries).await;
+        let mut indices = log_store.append_entries(entries).await;
 
+        //check correct order in reply
+        assert_eq!(indices.pop_front().unwrap().unwrap(), entry1.index);
+        assert_eq!(indices.pop_front().unwrap().unwrap(), entry2.index);
+        assert_eq!(indices.pop_front().unwrap().unwrap(), entry3.index);
+
+        //check correctness of meta data and stored entries
         assert_eq!(entry3, log_store.read_last_entry().await.unwrap());
         assert_eq!(log_store.get_last_log_index().await, 3);
         assert_eq!(log_store.get_previous_log_index().await, 2);
         assert_eq!(log_store.get_last_log_term().await, 2);
         assert_eq!(log_store.get_previous_log_term().await, 1);
 
-        // write entry with existing index but newer term
+        // write entry with existing index but newer term and check correctness of meta data and stored entries
         let entry4 = Entry {
             index: 2,
             term: 4,
