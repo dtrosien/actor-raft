@@ -34,6 +34,10 @@ enum LogStoreMsg {
         respond_to: oneshot::Sender<VecDeque<Option<u64>>>,
         entries: VecDeque<Entry>,
     },
+    ReadEntry {
+        respond_to: oneshot::Sender<Option<Entry>>,
+        index: u64,
+    },
     ReadLastEntry {
         respond_to: oneshot::Sender<Option<Entry>>,
     },
@@ -87,6 +91,9 @@ impl LogStore {
             }
             LogStoreMsg::ReadLastEntry { respond_to } => {
                 let _ = respond_to.send(self.read_last_entry().await);
+            }
+            LogStoreMsg::ReadEntry { respond_to, index } => {
+                let _ = respond_to.send(self.read_entry(index).await);
             }
             LogStoreMsg::ResetLog => self.reset_log().await,
         }
@@ -159,6 +166,13 @@ impl LogStore {
         }
     }
 
+    async fn read_entry(&self, index: u64) -> Option<Entry> {
+        match self.db.read_entry(index) {
+            Ok(option) => option,
+            Err(_) => None,
+        }
+    }
+
     async fn reset_log(&mut self) {
         self.db
             .clear_db()
@@ -219,6 +233,16 @@ impl LogStoreHandle {
     pub async fn read_last_entry(&self) -> Option<Entry> {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::ReadLastEntry { respond_to: send };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn read_entry(&self, index: u64) -> Option<Entry> {
+        let (send, recv) = oneshot::channel();
+        let msg = LogStoreMsg::ReadEntry {
+            respond_to: send,
+            index,
+        };
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
@@ -319,6 +343,7 @@ mod tests {
         let index = log_store.append_entry(entry4.clone()).await;
         assert_eq!(entry4.clone().index, index.unwrap());
         assert_eq!(entry4, log_store.read_last_entry().await.unwrap());
+        assert_eq!(entry1, log_store.read_entry(1).await.unwrap());
         assert_eq!(log_store.get_last_log_index().await, 2);
         assert_eq!(log_store.get_previous_log_index().await, 1);
         assert_eq!(log_store.get_last_log_term().await, 4);
