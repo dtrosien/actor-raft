@@ -2,6 +2,7 @@ use crate::actors::log::log_store::LogStoreHandle;
 use crate::raft_rpc::append_entries_request::Entry;
 
 use std::cmp::min;
+use std::collections::BTreeMap;
 use std::error::Error;
 use tokio::sync::{mpsc, oneshot};
 
@@ -13,6 +14,8 @@ struct Executor {
     receiver: mpsc::Receiver<ExecutorMsg>,
     commit_index: u64,
     last_applied: u64,
+    num_workers: u64,
+    max_repl_indices: BTreeMap<u64, u64>,
     log_store: LogStoreHandle,
     app: Box<dyn App>,
 }
@@ -29,6 +32,12 @@ enum ExecutorMsg {
     },
     SetLastApplied {
         index: u64,
+    },
+    GetNumWorkers {
+        respond_to: oneshot::Sender<u64>,
+    },
+    SetNumWorkers {
+        num: u64,
     },
     CommitLog {
         entry: Entry,
@@ -48,6 +57,8 @@ impl Executor {
             receiver,
             commit_index: 0,
             last_applied: 0,
+            num_workers: 0,
+            max_repl_indices: Default::default(),
             log_store,
             app,
         }
@@ -69,6 +80,10 @@ impl Executor {
                 let _ = respond_to.send(self.last_applied);
             }
             ExecutorMsg::SetLastApplied { index } => self.last_applied = index,
+            ExecutorMsg::GetNumWorkers { respond_to } => {
+                let _ = respond_to.send(self.num_workers);
+            }
+            ExecutorMsg::SetNumWorkers { num } => self.num_workers = num,
             ExecutorMsg::CommitLog { entry } => self.commit_log(entry).await,
             ExecutorMsg::ApplyLog { respond_to } => {
                 let _ = respond_to.send(self.apply_log().await);
@@ -94,6 +109,22 @@ impl Executor {
             self.last_applied = entry_to_be_applied;
         }
         Ok(reply)
+    }
+
+    async fn register_worker(&mut self, worker_id: u64) {
+        //sets key to id and value to 0 if not exists , else returns value
+        self.max_repl_indices.entry(worker_id).or_insert(0);
+    }
+
+    // used in leader state
+    async fn register_replication_success(&mut self, worker_id: u64, index: u64) -> u64 {
+        if self.max_repl_indices.contains_key(&worker_id) {
+            self.max_repl_indices.insert(worker_id, index);
+
+            //todo get min value from btree (see last step in rules for leader)
+            //todo write tests
+        }
+        self.commit_index
     }
 }
 
@@ -148,6 +179,19 @@ impl ExecutorHandle {
     pub async fn get_last_applied(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::GetLastApplied { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn set_num_workers(&self, num: u64) {
+        let msg = ExecutorMsg::SetNumWorkers { num };
+        let _ = self.sender.send(msg).await;
+    }
+
+    pub async fn get_num_workers(&self) -> u64 {
+        let (send, recv) = oneshot::channel();
+        let msg = ExecutorMsg::GetNumWorkers { respond_to: send };
 
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
