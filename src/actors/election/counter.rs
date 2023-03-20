@@ -46,12 +46,12 @@ impl Counter {
         if let Some(vote) = vote {
             if vote {
                 self.votes_received += 1;
-                self.report_to_watchdog().await;
+                self.check_if_won().await;
             }
         }
     }
 
-    async fn report_to_watchdog(&self) {
+    async fn check_if_won(&self) {
         if self.votes_received.ge(&self.votes_required) {
             self.watchdog.election_won().await;
         }
