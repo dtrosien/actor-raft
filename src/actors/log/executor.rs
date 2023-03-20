@@ -21,6 +21,15 @@ enum ExecutorMsg {
     GetCommitIndex {
         respond_to: oneshot::Sender<u64>,
     },
+    SetCommitIndex {
+        index: u64,
+    },
+    GetLastApplied {
+        respond_to: oneshot::Sender<u64>,
+    },
+    SetLastApplied {
+        index: u64,
+    },
     CommitLog {
         entry: Entry,
     },
@@ -55,6 +64,11 @@ impl Executor {
             ExecutorMsg::GetCommitIndex { respond_to } => {
                 let _ = respond_to.send(self.commit_index);
             }
+            ExecutorMsg::SetCommitIndex { index } => self.commit_index = index,
+            ExecutorMsg::GetLastApplied { respond_to } => {
+                let _ = respond_to.send(self.last_applied);
+            }
+            ExecutorMsg::SetLastApplied { index } => self.last_applied = index,
             ExecutorMsg::CommitLog { entry } => self.commit_log(entry).await,
             ExecutorMsg::ApplyLog { respond_to } => {
                 let _ = respond_to.send(self.apply_log().await);
@@ -70,7 +84,6 @@ impl Executor {
 
     async fn apply_log(&mut self) -> Result<bool, Box<dyn Error + Send + Sync>> {
         //todo think about reply type and how to use it and if it is really necessary
-
         //todo maybe add a second fn which doesnt wait and reply (to not block the main thread)
         let mut reply = false;
         while self.last_applied < self.commit_index {
@@ -117,6 +130,24 @@ impl ExecutorHandle {
     pub async fn get_commit_index(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::GetCommitIndex { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    async fn set_commit_index(&self, index: u64) {
+        let msg = ExecutorMsg::SetCommitIndex { index };
+        let _ = self.sender.send(msg).await;
+    }
+
+    async fn set_last_applied(&self, index: u64) {
+        let msg = ExecutorMsg::SetLastApplied { index };
+        let _ = self.sender.send(msg).await;
+    }
+
+    pub async fn get_last_applied(&self) -> u64 {
+        let (send, recv) = oneshot::channel();
+        let msg = ExecutorMsg::GetLastApplied { respond_to: send };
 
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
@@ -186,11 +217,40 @@ mod tests {
     #[tokio::test]
     async fn apply_log_test() {
         let log_store = LogStoreHandle::new(get_test_db().await);
+        log_store.reset_log().await;
+        let entry1 = Entry {
+            index: 1,
+            term: 1,
+            leader_commit: 2,
+            payload: "".to_string(),
+        };
+        let entry2 = Entry {
+            index: 2,
+            term: 1,
+            leader_commit: 2,
+            payload: "".to_string(),
+        };
+        log_store.append_entry(entry1).await;
+        log_store.append_entry(entry2).await;
+
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, app);
 
-        //todo test with real commit and last reply values -> implement setters and run with different values
-
+        //test initial state
         assert!(!executor.apply_log().await.unwrap());
+
+        //test that nothing happens if commit index is behind (should not happen)
+        executor.set_commit_index(1).await;
+        executor.set_last_applied(2).await;
+        assert!(!executor.apply_log().await.unwrap());
+        assert_eq!(executor.get_last_applied().await, 2);
+        assert_eq!(executor.get_commit_index().await, 1);
+
+        //test that last_applied increases until commit_index is reached and logs get applied
+        executor.set_commit_index(2).await;
+        executor.set_last_applied(0).await;
+        assert!(executor.apply_log().await.unwrap());
+        assert_eq!(executor.get_last_applied().await, 2);
+        assert_eq!(executor.get_commit_index().await, 2);
     }
 }
