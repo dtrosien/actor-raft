@@ -2,8 +2,10 @@ use crate::actors::log::log_store::LogStoreHandle;
 use crate::raft_rpc::append_entries_request::Entry;
 
 use std::cmp::min;
-use std::collections::BTreeMap;
+use std::collections::hash_map::Entry::Occupied;
+use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
+use std::ops::Add;
 use tokio::sync::{mpsc, oneshot};
 
 pub trait App: Send + Sync {
@@ -15,7 +17,7 @@ struct Executor {
     commit_index: u64,
     last_applied: u64,
     num_workers: u64,
-    max_repl_indices: BTreeMap<u64, u64>,
+    match_index: HashMap<u64, u64>,
     log_store: LogStoreHandle,
     app: Box<dyn App>,
 }
@@ -58,7 +60,7 @@ impl Executor {
             commit_index: 0,
             last_applied: 0,
             num_workers: 0,
-            max_repl_indices: Default::default(),
+            match_index: Default::default(),
             log_store,
             app,
         }
@@ -98,8 +100,6 @@ impl Executor {
     }
 
     async fn apply_log(&mut self) -> Result<bool, Box<dyn Error + Send + Sync>> {
-        //todo think about reply type and how to use it and if it is really necessary
-        //todo maybe add a second fn which doesnt wait and reply (to not block the main thread)
         let mut reply = false;
         while self.last_applied < self.commit_index {
             let entry_to_be_applied = self.last_applied + 1;
@@ -113,16 +113,19 @@ impl Executor {
 
     async fn register_worker(&mut self, worker_id: u64) {
         //sets key to id and value to 0 if not exists , else returns value
-        self.max_repl_indices.entry(worker_id).or_insert(0);
+        self.match_index.entry(worker_id).or_insert(0);
     }
 
     // used in leader state
     async fn register_replication_success(&mut self, worker_id: u64, index: u64) -> u64 {
-        if self.max_repl_indices.contains_key(&worker_id) {
-            self.max_repl_indices.insert(worker_id, index);
-
-            //todo get min value from btree (see last step in rules for leader)
+        if let Occupied(mut entry) = self.match_index.entry(worker_id) {
+            entry.insert(index);
+            if index > self.commit_index {
+                self.commit_index = new_commit_index(&mut self.match_index, index);
+            }
             //todo write tests
+            //todo maybe the term is also needed as param ( todo: termcheck see last paragraph in raft paper for leader)
+            //todo add msg and handler fn
         }
         self.commit_index
     }
@@ -195,6 +198,39 @@ impl ExecutorHandle {
 
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
+    }
+}
+
+fn new_commit_index(match_index: &mut HashMap<u64, u64>, num_worker: u64) -> u64 {
+    let mut count_map: HashMap<u64, u64> = HashMap::new();
+    //todo better way than O(n^2)?
+    for (_id, max_index) in match_index.iter() {
+        for index in 1..=*max_index {
+            if count_map.contains_key(&index) {
+                let new_count = count_map.get(&index).unwrap() + 1;
+                count_map.insert(index, new_count);
+            } else {
+                count_map.insert(index, 1);
+            }
+        }
+    }
+
+    let mut commit_index = 0_u64;
+    for (index, count) in count_map {
+        if count.ge(&calculate_required_replicas(num_worker)) && commit_index < index {
+            commit_index = index;
+        };
+    }
+
+    commit_index
+}
+
+//exclude leader (-> insert only number of other nodes)
+fn calculate_required_replicas(num_worker: u64) -> u64 {
+    if num_worker % 2 == 0 {
+        num_worker / 2
+    } else {
+        (num_worker + 1) / 2
     }
 }
 
@@ -296,5 +332,22 @@ mod tests {
         assert!(executor.apply_log().await.unwrap());
         assert_eq!(executor.get_last_applied().await, 2);
         assert_eq!(executor.get_commit_index().await, 2);
+    }
+
+    #[tokio::test]
+    async fn new_commit_index_test() {
+        let mut match_index: HashMap<u64, u64> = HashMap::new();
+
+        assert_eq!(new_commit_index(&mut match_index, 5), 0);
+
+        match_index.insert(1, 1);
+        match_index.insert(2, 2);
+        match_index.insert(3, 3);
+        match_index.insert(5, 5);
+        match_index.insert(6, 5);
+
+        assert_eq!(new_commit_index(&mut match_index, 5), 3);
+
+        //todo interesting for thesis: performance testing and when compaction must happen
     }
 }
