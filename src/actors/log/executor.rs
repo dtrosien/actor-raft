@@ -3,9 +3,8 @@ use crate::raft_rpc::append_entries_request::Entry;
 
 use std::cmp::min;
 use std::collections::hash_map::Entry::Occupied;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::error::Error;
-use std::ops::Add;
 use tokio::sync::{mpsc, oneshot};
 
 pub trait App: Send + Sync {
@@ -17,12 +16,27 @@ struct Executor {
     commit_index: u64,
     last_applied: u64,
     num_workers: u64,
+    current_term: u64, //todo check if it is sufficient to pass the value or use the term checker
     match_index: HashMap<u64, u64>,
     log_store: LogStoreHandle,
     app: Box<dyn App>,
 }
 
 enum ExecutorMsg {
+    RegisterWorker {
+        worker_id: u64,
+    },
+    RegisterReplSuccess {
+        worker_id: u64,
+        index: u64,
+        respond_to: oneshot::Sender<u64>,
+    },
+    CommitLog {
+        entry: Entry,
+    },
+    ApplyLog {
+        respond_to: oneshot::Sender<Result<bool, Box<dyn Error + Send + Sync>>>,
+    },
     GetCommitIndex {
         respond_to: oneshot::Sender<u64>,
     },
@@ -41,18 +55,13 @@ enum ExecutorMsg {
     SetNumWorkers {
         num: u64,
     },
-    CommitLog {
-        entry: Entry,
-    },
-    ApplyLog {
-        respond_to: oneshot::Sender<Result<bool, Box<dyn Error + Send + Sync>>>,
-    },
 }
 
 impl Executor {
     fn new(
         receiver: mpsc::Receiver<ExecutorMsg>,
         log_store: LogStoreHandle,
+        current_term: u64,
         app: Box<dyn App>,
     ) -> Self {
         Executor {
@@ -60,6 +69,7 @@ impl Executor {
             commit_index: 0,
             last_applied: 0,
             num_workers: 0,
+            current_term,
             match_index: Default::default(),
             log_store,
             app,
@@ -74,6 +84,18 @@ impl Executor {
 
     async fn handle_message(&mut self, msg: ExecutorMsg) {
         match msg {
+            ExecutorMsg::CommitLog { entry } => self.commit_log(entry).await,
+            ExecutorMsg::ApplyLog { respond_to } => {
+                let _ = respond_to.send(self.apply_log().await);
+            }
+            ExecutorMsg::RegisterWorker { worker_id } => self.register_worker(worker_id).await,
+            ExecutorMsg::RegisterReplSuccess {
+                worker_id,
+                index,
+                respond_to,
+            } => {
+                let _ = respond_to.send(self.register_replication_success(worker_id, index).await);
+            }
             ExecutorMsg::GetCommitIndex { respond_to } => {
                 let _ = respond_to.send(self.commit_index);
             }
@@ -86,10 +108,6 @@ impl Executor {
                 let _ = respond_to.send(self.num_workers);
             }
             ExecutorMsg::SetNumWorkers { num } => self.num_workers = num,
-            ExecutorMsg::CommitLog { entry } => self.commit_log(entry).await,
-            ExecutorMsg::ApplyLog { respond_to } => {
-                let _ = respond_to.send(self.apply_log().await);
-            }
         }
     }
 
@@ -116,16 +134,21 @@ impl Executor {
         self.match_index.entry(worker_id).or_insert(0);
     }
 
-    // used in leader state
+    // used in leader state (see last paragraph for leader in raft paper)
     async fn register_replication_success(&mut self, worker_id: u64, index: u64) -> u64 {
         if let Occupied(mut entry) = self.match_index.entry(worker_id) {
             entry.insert(index);
             if index > self.commit_index {
-                self.commit_index = new_commit_index(&mut self.match_index, index);
+                let potential_commit_index =
+                    new_commit_index(&mut self.match_index, self.commit_index, index);
+
+                //todo is the termcheck possible without reading the log from disk?
+                if let Some(entry) = self.log_store.read_entry(potential_commit_index).await {
+                    if entry.term == self.current_term {
+                        self.commit_index = potential_commit_index
+                    }
+                }
             }
-            //todo write tests
-            //todo maybe the term is also needed as param ( todo: termcheck see last paragraph in raft paper for leader)
-            //todo add msg and handler fn
         }
         self.commit_index
     }
@@ -141,9 +164,9 @@ pub struct ExecutorHandle {
 }
 
 impl ExecutorHandle {
-    pub fn new(log_store: LogStoreHandle, app: Box<dyn App>) -> Self {
+    pub fn new(log_store: LogStoreHandle, current_term: u64, app: Box<dyn App>) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = Executor::new(receiver, log_store, app);
+        let mut actor = Executor::new(receiver, log_store, current_term, app);
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -157,6 +180,23 @@ impl ExecutorHandle {
     pub async fn apply_log(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::ApplyLog { respond_to: send };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn register_worker(&self, worker_id: u64) {
+        let msg = ExecutorMsg::RegisterWorker { worker_id };
+        let _ = self.sender.send(msg).await;
+    }
+
+    //reply last commit
+    pub async fn register_replication_success(&self, worker_id: u64, index: u64) -> u64 {
+        let (send, recv) = oneshot::channel();
+        let msg = ExecutorMsg::RegisterReplSuccess {
+            worker_id,
+            index,
+            respond_to: send,
+        };
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
@@ -201,11 +241,15 @@ impl ExecutorHandle {
     }
 }
 
-fn new_commit_index(match_index: &mut HashMap<u64, u64>, num_worker: u64) -> u64 {
+fn new_commit_index(
+    match_index: &mut HashMap<u64, u64>,
+    last_commit_index: u64,
+    num_worker: u64,
+) -> u64 {
     let mut count_map: HashMap<u64, u64> = HashMap::new();
-    //todo better way than O(n^2)?
+    //todo is there a better way than O(n^2)?
     for (_id, max_index) in match_index.iter() {
-        for index in 1..=*max_index {
+        for index in last_commit_index..=*max_index {
             if count_map.contains_key(&index) {
                 let new_count = count_map.get(&index).unwrap() + 1;
                 count_map.insert(index, new_count);
@@ -262,7 +306,7 @@ mod tests {
     async fn get_commit_index_test() {
         let log_store = LogStoreHandle::new(get_test_db().await);
         let app = Box::new(TestApp {});
-        let executor = ExecutorHandle::new(log_store, app);
+        let executor = ExecutorHandle::new(log_store, 0, app);
 
         assert_eq!(executor.get_commit_index().await, 0);
     }
@@ -271,7 +315,7 @@ mod tests {
     async fn commit_log_test() {
         let log_store = LogStoreHandle::new(get_test_db().await);
         let app = Box::new(TestApp {});
-        let executor = ExecutorHandle::new(log_store, app);
+        let executor = ExecutorHandle::new(log_store, 0, app);
 
         // index is lower than leader commit -> index wins
         let entry1 = Entry {
@@ -314,7 +358,7 @@ mod tests {
         log_store.append_entry(entry2).await;
 
         let app = Box::new(TestApp {});
-        let executor = ExecutorHandle::new(log_store, app);
+        let executor = ExecutorHandle::new(log_store, 0, app);
 
         //test initial state
         assert!(!executor.apply_log().await.unwrap());
@@ -338,7 +382,7 @@ mod tests {
     async fn new_commit_index_test() {
         let mut match_index: HashMap<u64, u64> = HashMap::new();
 
-        assert_eq!(new_commit_index(&mut match_index, 5), 0);
+        assert_eq!(new_commit_index(&mut match_index, 0, 5), 0);
 
         match_index.insert(1, 1);
         match_index.insert(2, 2);
@@ -346,8 +390,51 @@ mod tests {
         match_index.insert(5, 5);
         match_index.insert(6, 5);
 
-        assert_eq!(new_commit_index(&mut match_index, 5), 3);
+        assert_eq!(new_commit_index(&mut match_index, 0, 5), 3);
 
-        //todo interesting for thesis: performance testing and when compaction must happen
+        match_index.insert(1, 4999994);
+        match_index.insert(2, 4999999);
+        match_index.insert(3, 5000000);
+        match_index.insert(5, 5000001);
+        match_index.insert(6, 5000001);
+        assert_eq!(new_commit_index(&mut match_index, 4999994, 5), 5000000);
+
+        //todo interesting for thesis: performance testing and when compaction must happen - is it really necessary when counting starts with last commit?
+    }
+
+    #[tokio::test]
+    async fn register_replecation_success_test() {
+        let log_store = LogStoreHandle::new(get_test_db().await);
+        log_store.reset_log().await;
+        let app = Box::new(TestApp {});
+        let executor = ExecutorHandle::new(log_store.clone(), 0, app);
+
+        // needed for term check in log
+        for i in 1..=5 {
+            let entry = Entry {
+                index: i,
+                term: 0,
+                leader_commit: i,
+                payload: "".to_string(),
+            };
+            log_store.append_entry(entry).await;
+        }
+
+        executor.register_worker(1).await;
+        executor.register_worker(2).await;
+        executor.register_worker(4).await;
+
+        executor.register_replication_success(4, 1).await;
+        executor.register_replication_success(1, 1).await;
+        executor.register_replication_success(4, 2).await;
+        executor.register_replication_success(4, 3).await;
+        //not registered, so must not be count
+        executor.register_replication_success(3, 999).await;
+        executor.register_replication_success(2, 2).await;
+        executor.register_replication_success(2, 999).await;
+        executor.register_replication_success(1, 4).await;
+
+        // since id3 is not registered, 4 is the next highest index which 2 nodes have registered
+        assert_eq!(executor.get_commit_index().await, 4);
     }
 }
