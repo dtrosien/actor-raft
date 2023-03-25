@@ -1,6 +1,7 @@
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Node;
+use crate::raft_rpc::append_entries_request::Entry;
 use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
@@ -8,10 +9,13 @@ struct Worker {
     watchdog: WatchdogHandle,
     log_store: LogStoreHandle,
     node: Node,
+    next_index: u64,
+    match_index: u64,
 }
 
 enum WorkerMsg {
     GetNode { respond_to: oneshot::Sender<Node> },
+    ReplicateEntry { entry: Entry },
 }
 
 impl Worker {
@@ -20,27 +24,36 @@ impl Worker {
         watchdog: WatchdogHandle,
         log_store: LogStoreHandle,
         node: Node,
+        last_log_index: u64,
     ) -> Self {
         Worker {
             receiver,
             watchdog,
             log_store,
             node,
+            next_index: last_log_index + 1,
+            match_index: 0,
         }
     }
 
     async fn run(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
-            self.handle_message(msg);
+            self.handle_message(msg).await;
         }
     }
 
-    fn handle_message(&mut self, msg: WorkerMsg) {
+    async fn handle_message(&mut self, msg: WorkerMsg) {
         match msg {
             WorkerMsg::GetNode { respond_to } => {
                 let _ = respond_to.send(self.node.clone());
             }
+            WorkerMsg::ReplicateEntry { entry } => self.replicate_entry(entry).await,
         }
+    }
+
+    async fn replicate_entry(&self, entry: Entry) {
+
+        //todo implementation
     }
 }
 
@@ -50,9 +63,14 @@ pub struct WorkerHandle {
 }
 
 impl WorkerHandle {
-    pub fn new(watchdog: WatchdogHandle, log_store: LogStoreHandle, node: Node) -> Self {
+    pub fn new(
+        watchdog: WatchdogHandle,
+        log_store: LogStoreHandle,
+        node: Node,
+        last_log_index: u64,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = Worker::new(receiver, watchdog, log_store, node);
+        let mut actor = Worker::new(receiver, watchdog, log_store, node, last_log_index);
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -83,7 +101,7 @@ mod tests {
             port: 0,
         };
 
-        let worker = WorkerHandle::new(wd, log_store, node.clone());
+        let worker = WorkerHandle::new(wd, log_store, node.clone(), 0);
         assert_eq!(worker.get_node().await.id, node.id);
     }
 }

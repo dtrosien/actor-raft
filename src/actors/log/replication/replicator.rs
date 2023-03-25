@@ -3,6 +3,7 @@ use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::worker::WorkerHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
+use crate::raft_rpc::append_entries_request::Entry;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
@@ -16,6 +17,7 @@ struct Replicator {
 enum ReplicatorMsg {
     SetTerm { term: u64 },
     GetTerm { respond_to: oneshot::Sender<u64> },
+    ReplicateEntry { entry: Entry },
 }
 
 impl Replicator {
@@ -26,6 +28,7 @@ impl Replicator {
         watchdog: WatchdogHandle,
         log_store: LogStoreHandle,
         config: Config,
+        last_log_index: u64,
     ) -> Self {
         let workers = config
             .nodes
@@ -33,7 +36,7 @@ impl Replicator {
             .map(|node| {
                 (
                     node.id,
-                    WorkerHandle::new(watchdog.clone(), log_store.clone(), node),
+                    WorkerHandle::new(watchdog.clone(), log_store.clone(), node, last_log_index),
                 )
             })
             .collect();
@@ -48,18 +51,21 @@ impl Replicator {
 
     async fn run(&mut self) {
         while let Some(msg) = self.receiver.recv().await {
-            self.handle_message(msg);
+            self.handle_message(msg).await;
         }
     }
 
-    fn handle_message(&mut self, msg: ReplicatorMsg) {
+    async fn handle_message(&mut self, msg: ReplicatorMsg) {
         match msg {
             ReplicatorMsg::SetTerm { term } => self.term = term,
             ReplicatorMsg::GetTerm { respond_to } => {
                 let _ = respond_to.send(self.term);
             }
+            ReplicatorMsg::ReplicateEntry { entry } => self.replicate_entry(entry).await,
         }
     }
+
+    async fn replicate_entry(&self, entry: Entry) {}
 }
 
 #[derive(Clone)]
@@ -74,12 +80,26 @@ impl ReplicatorHandle {
         watchdog: WatchdogHandle,
         log_store: LogStoreHandle,
         config: Config,
+        last_log_index: u64,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = Replicator::new(receiver, term, executor, watchdog, log_store, config);
+        let mut actor = Replicator::new(
+            receiver,
+            term,
+            executor,
+            watchdog,
+            log_store,
+            config,
+            last_log_index,
+        );
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
+    }
+
+    pub async fn replicate_entry(&self, entry: Entry) {
+        let msg = ReplicatorMsg::ReplicateEntry { entry };
+        let _ = self.sender.send(msg).await;
     }
 
     pub async fn set_term(&self, term: u64) {
@@ -109,8 +129,9 @@ mod tests {
         let executor = ExecutorHandle::new(log_store.clone(), 0, app);
         let wd = WatchdogHandle::default();
         let config = Config::for_test().await;
+        let last_log_index = log_store.get_last_log_index().await;
 
-        let replicator = ReplicatorHandle::new(0, executor, wd, log_store, config);
+        let replicator = ReplicatorHandle::new(0, executor, wd, log_store, config, last_log_index);
         replicator.set_term(1).await;
         assert_eq!(replicator.get_term().await, 1);
     }
