@@ -281,26 +281,7 @@ fn calculate_required_replicas(num_worker: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use once_cell::sync::Lazy;
-    use tokio::sync::Mutex;
-
-    // global var used to offer unique dbs for each log store in unit tests to prevent concurrency issues while testing
-    static DB_COUNTER: Lazy<Mutex<u16>> = Lazy::new(|| Mutex::new(0));
-    // get number from GLOBAL_DB_COUNTER
-    pub async fn get_test_db() -> String {
-        let mut i = DB_COUNTER.lock().await;
-        *i += 1;
-        format!("databases/executor-test-db_{}", *i)
-    }
-
-    struct TestApp {}
-
-    impl App for TestApp {
-        fn run(&self, entry: Entry) -> Result<bool, Box<dyn Error + Send + Sync>> {
-            println!("hey there");
-            Ok(true)
-        }
-    }
+    use crate::actors::log::test_utils::{get_test_db, TestApp};
 
     #[tokio::test]
     async fn get_commit_index_test() {

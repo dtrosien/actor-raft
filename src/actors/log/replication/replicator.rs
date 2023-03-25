@@ -1,8 +1,10 @@
+use crate::actors::log::executor::ExecutorHandle;
 use tokio::sync::{mpsc, oneshot};
 
 struct Replicator {
     receiver: mpsc::Receiver<ReplicatorMsg>,
     term: u64,
+    executor: ExecutorHandle,
 }
 
 enum ReplicatorMsg {
@@ -11,8 +13,12 @@ enum ReplicatorMsg {
 }
 
 impl Replicator {
-    fn new(receiver: mpsc::Receiver<ReplicatorMsg>, term: u64) -> Self {
-        Replicator { receiver, term }
+    fn new(receiver: mpsc::Receiver<ReplicatorMsg>, term: u64, executor: ExecutorHandle) -> Self {
+        Replicator {
+            receiver,
+            term,
+            executor,
+        }
     }
 
     async fn run(&mut self) {
@@ -37,9 +43,9 @@ pub struct ReplicatorHandle {
 }
 
 impl ReplicatorHandle {
-    pub fn new(term: u64) -> Self {
+    pub fn new(term: u64, executor: ExecutorHandle) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = Replicator::new(receiver, term);
+        let mut actor = Replicator::new(receiver, term, executor);
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -62,10 +68,15 @@ impl ReplicatorHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actors::log::log_store::LogStoreHandle;
+    use crate::actors::log::test_utils::{get_test_db, TestApp};
 
     #[tokio::test]
     async fn term_test() {
-        let replicator = ReplicatorHandle::new(0);
+        let log_store = LogStoreHandle::new(get_test_db().await);
+        let app = Box::new(TestApp {});
+        let executor = ExecutorHandle::new(log_store, 0, app);
+        let replicator = ReplicatorHandle::new(0, executor);
         replicator.set_term(1).await;
         assert_eq!(replicator.get_term().await, 1);
     }
