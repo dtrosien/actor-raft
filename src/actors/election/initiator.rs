@@ -52,7 +52,7 @@ impl Initiator {
             .map(|node| {
                 (
                     node.id,
-                    WorkerHandle::new(term.clone(), counter.clone(), node.clone()),
+                    WorkerHandle::new(term.clone(), counter.clone(), node),
                 )
             })
             .collect();
