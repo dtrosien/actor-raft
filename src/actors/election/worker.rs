@@ -144,10 +144,10 @@ mod tests {
 
         let test_future = async {
             // sleep necessary to make sure that server is up
-            tokio::time::sleep(Duration::from_millis(5)).await;
+            tokio::time::sleep(Duration::from_millis(15)).await;
             worker.request_vote(request).await;
             // sleep necessary to make sure that vote is processed before getting it
-            tokio::time::sleep(Duration::from_millis(5)).await;
+            tokio::time::sleep(Duration::from_millis(15)).await;
         };
 
         tokio::select! {
