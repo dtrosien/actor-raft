@@ -1,12 +1,14 @@
 use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::watchdog::WatchdogHandle;
+use crate::actors::term_store::TermStoreHandle;
 use crate::config::Node;
 use crate::raft_rpc::append_entries_request::Entry;
+use crate::raft_rpc::AppendEntriesRequest;
+use crate::rpc::client;
 use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
     receiver: mpsc::Receiver<WorkerMsg>,
-    watchdog: WatchdogHandle,
+    term_store: TermStoreHandle,
     log_store: LogStoreHandle,
     node: Node,
     next_index: u64,
@@ -21,14 +23,14 @@ enum WorkerMsg {
 impl Worker {
     fn new(
         receiver: mpsc::Receiver<WorkerMsg>,
-        watchdog: WatchdogHandle,
+        term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         node: Node,
         last_log_index: u64,
     ) -> Self {
         Worker {
             receiver,
-            watchdog,
+            term_store,
             log_store,
             node,
             next_index: last_log_index + 1,
@@ -52,7 +54,22 @@ impl Worker {
     }
 
     async fn replicate_entry(&self, entry: Entry) {
+        let ip = self.node.ip.clone();
+        let port = self.node.port;
+        let uri = format!("https://{ip}:{port}");
 
+        let request = AppendEntriesRequest {
+            term: 0,
+            leader_id: 0,
+            prev_log_index: 0,
+            prev_log_term: 0,
+            entries: vec![],
+            leader_commit: 0,
+        };
+
+        let response = client::append_entry(uri, request).await;
+
+        let _ = self.term_store.check_term(0).await;
         //todo implementation
     }
 }
@@ -64,13 +81,13 @@ pub struct WorkerHandle {
 
 impl WorkerHandle {
     pub fn new(
-        watchdog: WatchdogHandle,
+        term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         node: Node,
         last_log_index: u64,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = Worker::new(receiver, watchdog, log_store, node, last_log_index);
+        let mut actor = Worker::new(receiver, term_store, log_store, node, last_log_index);
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -92,7 +109,7 @@ mod tests {
 
     #[tokio::test]
     async fn id_test() {
-        let wd = WatchdogHandle::default();
+        let wd = TermStoreHandle::default();
         let log_store = LogStoreHandle::new(get_test_db().await);
 
         let node = Node {

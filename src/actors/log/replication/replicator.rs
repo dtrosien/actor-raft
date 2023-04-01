@@ -1,6 +1,7 @@
 use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::worker::WorkerHandle;
+use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
 use crate::raft_rpc::append_entries_request::Entry;
@@ -25,7 +26,7 @@ impl Replicator {
         receiver: mpsc::Receiver<ReplicatorMsg>,
         term: u64,
         executor: ExecutorHandle,
-        watchdog: WatchdogHandle,
+        term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
         last_log_index: u64,
@@ -36,7 +37,7 @@ impl Replicator {
             .map(|node| {
                 (
                     node.id,
-                    WorkerHandle::new(watchdog.clone(), log_store.clone(), node, last_log_index),
+                    WorkerHandle::new(term_store.clone(), log_store.clone(), node, last_log_index),
                 )
             })
             .collect();
@@ -77,7 +78,7 @@ impl ReplicatorHandle {
     pub fn new(
         term: u64,
         executor: ExecutorHandle,
-        watchdog: WatchdogHandle,
+        term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
         last_log_index: u64,
@@ -87,7 +88,7 @@ impl ReplicatorHandle {
             receiver,
             term,
             executor,
-            watchdog,
+            term_store,
             log_store,
             config,
             last_log_index,
@@ -121,17 +122,19 @@ mod tests {
     use super::*;
     use crate::actors::log::log_store::LogStoreHandle;
     use crate::actors::log::test_utils::{get_test_db, TestApp};
+    use crate::actors::term_store::TermStoreHandle;
 
     #[tokio::test]
     async fn term_test() {
         let log_store = LogStoreHandle::new(get_test_db().await);
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store.clone(), 0, app);
-        let wd = WatchdogHandle::default();
+        let term_store = TermStoreHandle::default();
         let config = Config::for_test().await;
         let last_log_index = log_store.get_last_log_index().await;
 
-        let replicator = ReplicatorHandle::new(0, executor, wd, log_store, config, last_log_index);
+        let replicator =
+            ReplicatorHandle::new(0, executor, term_store, log_store, config, last_log_index);
         replicator.set_term(1).await;
         assert_eq!(replicator.get_term().await, 1);
     }
