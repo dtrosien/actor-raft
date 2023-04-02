@@ -1,6 +1,6 @@
 use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::replication::worker::WorkerHandle;
+use crate::actors::log::replication::worker::{InitialStateMeta, WorkerHandle};
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
@@ -23,14 +23,13 @@ enum ReplicatorMsg {
 
 impl Replicator {
     fn new(
+        //todo check if it is better to get init values from Handles and make new() async
         receiver: mpsc::Receiver<ReplicatorMsg>,
-        term: u64,
         executor: ExecutorHandle,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        last_log_index: u64,
-        leader_commit: u64,
+        state_meta: InitialStateMeta,
     ) -> Self {
         let workers = config
             .nodes
@@ -43,10 +42,7 @@ impl Replicator {
                         log_store.clone(),
                         executor.clone(),
                         node,
-                        last_log_index,
-                        term,
-                        config.id,
-                        leader_commit,
+                        state_meta.clone(),
                     ),
                 )
             })
@@ -54,7 +50,7 @@ impl Replicator {
 
         Replicator {
             receiver,
-            term,
+            term: state_meta.term,
             executor,
             workers,
         }
@@ -86,24 +82,15 @@ pub struct ReplicatorHandle {
 
 impl ReplicatorHandle {
     pub fn new(
-        term: u64,
         executor: ExecutorHandle,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        last_log_index: u64,
-        leader_commit: u64,
+        state_meta: InitialStateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Replicator::new(
-            receiver,
-            term,
-            executor,
-            term_store,
-            log_store,
-            config,
-            last_log_index,
-            leader_commit,
+            receiver, executor, term_store, log_store, config, state_meta,
         );
         tokio::spawn(async move { actor.run().await });
 
@@ -145,16 +132,16 @@ mod tests {
         let config = Config::for_test().await;
         let last_log_index = log_store.get_last_log_index().await;
         let leader_commit = executor.get_commit_index().await;
-
-        let replicator = ReplicatorHandle::new(
-            0,
-            executor,
-            term_store,
-            log_store,
-            config,
+        let state_meta = InitialStateMeta {
             last_log_index,
+            previous_log_index: 0,
+            previous_log_term: 0,
+            term: 0,
+            leader_id: 0,
             leader_commit,
-        );
+        };
+
+        let replicator = ReplicatorHandle::new(executor, term_store, log_store, config, state_meta);
         replicator.set_term(1).await;
         assert_eq!(replicator.get_term().await, 1);
     }
