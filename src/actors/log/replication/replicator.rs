@@ -30,6 +30,7 @@ impl Replicator {
         log_store: LogStoreHandle,
         config: Config,
         last_log_index: u64,
+        leader_commit: u64,
     ) -> Self {
         let workers = config
             .nodes
@@ -37,7 +38,16 @@ impl Replicator {
             .map(|node| {
                 (
                     node.id,
-                    WorkerHandle::new(term_store.clone(), log_store.clone(), node, last_log_index),
+                    WorkerHandle::new(
+                        term_store.clone(),
+                        log_store.clone(),
+                        executor.clone(),
+                        node,
+                        last_log_index,
+                        term,
+                        config.id,
+                        leader_commit,
+                    ),
                 )
             })
             .collect();
@@ -82,6 +92,7 @@ impl ReplicatorHandle {
         log_store: LogStoreHandle,
         config: Config,
         last_log_index: u64,
+        leader_commit: u64,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Replicator::new(
@@ -92,6 +103,7 @@ impl ReplicatorHandle {
             log_store,
             config,
             last_log_index,
+            leader_commit,
         );
         tokio::spawn(async move { actor.run().await });
 
@@ -132,9 +144,17 @@ mod tests {
         let term_store = TermStoreHandle::default();
         let config = Config::for_test().await;
         let last_log_index = log_store.get_last_log_index().await;
+        let leader_commit = executor.get_commit_index().await;
 
-        let replicator =
-            ReplicatorHandle::new(0, executor, term_store, log_store, config, last_log_index);
+        let replicator = ReplicatorHandle::new(
+            0,
+            executor,
+            term_store,
+            log_store,
+            config,
+            last_log_index,
+            leader_commit,
+        );
         replicator.set_term(1).await;
         assert_eq!(replicator.get_term().await, 1);
     }

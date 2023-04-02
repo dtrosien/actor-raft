@@ -1,3 +1,4 @@
+use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::term_store::TermStoreHandle;
 use crate::config::Node;
@@ -10,9 +11,13 @@ struct Worker {
     receiver: mpsc::Receiver<WorkerMsg>,
     term_store: TermStoreHandle,
     log_store: LogStoreHandle,
+    executor: ExecutorHandle,
     node: Node,
     next_index: u64,
     match_index: u64,
+    term: u64,
+    leader_id: u64,
+    leader_commit: u64,
 }
 
 enum WorkerMsg {
@@ -25,16 +30,24 @@ impl Worker {
         receiver: mpsc::Receiver<WorkerMsg>,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
+        executor: ExecutorHandle,
         node: Node,
         last_log_index: u64,
+        term: u64,
+        leader_id: u64,
+        leader_commit: u64,
     ) -> Self {
         Worker {
             receiver,
             term_store,
             log_store,
+            executor,
             node,
             next_index: last_log_index + 1,
             match_index: 0,
+            term,
+            leader_id,
+            leader_commit,
         }
     }
 
@@ -83,11 +96,25 @@ impl WorkerHandle {
     pub fn new(
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
+        executor: ExecutorHandle,
         node: Node,
         last_log_index: u64,
+        term: u64,
+        leader_id: u64,
+        leader_commit: u64,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = Worker::new(receiver, term_store, log_store, node, last_log_index);
+        let mut actor = Worker::new(
+            receiver,
+            term_store,
+            log_store,
+            executor,
+            node,
+            last_log_index,
+            term,
+            leader_id,
+            leader_commit,
+        );
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -105,20 +132,31 @@ impl WorkerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::log::test_utils::get_test_db;
+    use crate::actors::log::test_utils::{get_test_db, TestApp};
 
     #[tokio::test]
     async fn id_test() {
-        let wd = TermStoreHandle::default();
+        let term_store = TermStoreHandle::default();
         let log_store = LogStoreHandle::new(get_test_db().await);
+        let app = Box::new(TestApp {});
 
+        let executor = ExecutorHandle::new(log_store.clone(), 0, app);
         let node = Node {
             id: 0,
             ip: "".to_string(),
             port: 0,
         };
 
-        let worker = WorkerHandle::new(wd, log_store, node.clone(), 0);
+        let worker = WorkerHandle::new(
+            term_store,
+            log_store.clone(),
+            executor,
+            node.clone(),
+            0,
+            0,
+            0,
+            0,
+        );
         assert_eq!(worker.get_node().await.id, node.id);
     }
 }
