@@ -1,6 +1,6 @@
 use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::replication::worker::{InitialStateMeta, WorkerHandle};
+use crate::actors::log::replication::worker::{StateMeta, WorkerHandle};
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
@@ -29,7 +29,7 @@ impl Replicator {
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        state_meta: InitialStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let workers = config
             .nodes
@@ -86,7 +86,7 @@ impl ReplicatorHandle {
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        state_meta: InitialStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Replicator::new(
@@ -132,8 +132,9 @@ mod tests {
         let config = Config::for_test().await;
         let last_log_index = log_store.get_last_log_index().await;
         let leader_commit = executor.get_commit_index().await;
-        let state_meta = InitialStateMeta {
-            last_log_index,
+        let state_meta = StateMeta {
+            // last_log_index,
+            // last_log_term: 0,
             previous_log_index: 0,
             previous_log_term: 0,
             term: 0,

@@ -384,7 +384,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_replecation_success_test() {
+    async fn register_replication_success_test() {
         let log_store = LogStoreHandle::new(get_test_db().await);
         log_store.reset_log().await;
         let app = Box::new(TestApp {});

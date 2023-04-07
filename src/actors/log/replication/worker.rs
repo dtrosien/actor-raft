@@ -18,19 +18,25 @@ struct Worker {
     log_store: LogStoreHandle,
     executor: ExecutorHandle,
     node: Node,
-    next_index: u64,
-    match_index: u64,
-    previous_log_index: u64,
-    previous_log_term: u64,
-    term: u64,
-    leader_id: u64,
-    leader_commit: u64,
+    uri: String,
+    // next_index: u64,
+    // match_index: u64,
+    // last_log_index: u64,
+    // last_log_term: u64,
+    // previous_log_index: u64,
+    // previous_log_term: u64,
+    // term: u64,
+    // leader_id: u64,
+    // leader_commit: u64,
+    state_meta: StateMeta,
     entries_cache: VecDeque<Entry>,
 }
 
 enum WorkerMsg {
     GetNode { respond_to: oneshot::Sender<Node> },
     ReplicateEntry { entry: Entry },
+    AddToReplicationBatch { entry: Entry },
+    FlushReplicationBatch,
 }
 
 impl Worker {
@@ -40,21 +46,28 @@ impl Worker {
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
         node: Node,
-        state_meta: InitialStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
+        let ip = node.ip.clone();
+        let port = node.port;
+        let uri = format!("https://{ip}:{port}");
         Worker {
             receiver,
             term_store,
             log_store,
             executor,
             node,
-            next_index: state_meta.last_log_index + 1,
-            match_index: 0,
-            previous_log_index: state_meta.previous_log_index,
-            previous_log_term: state_meta.previous_log_term,
-            term: state_meta.term,
-            leader_id: state_meta.leader_id,
-            leader_commit: state_meta.leader_commit,
+            uri,
+            // next_index: state_meta.last_log_index + 1,
+            // match_index: 0,
+            // last_log_index: state_meta.last_log_index,
+            // last_log_term: state_meta.last_log_term,
+            // previous_log_index: state_meta.previous_log_index,
+            // previous_log_term: state_meta.previous_log_term,
+            // term: state_meta.term,
+            // leader_id: state_meta.leader_id,
+            // leader_commit: state_meta.leader_commit,
+            state_meta,
             entries_cache: Default::default(),
         }
     }
@@ -71,71 +84,107 @@ impl Worker {
                 let _ = respond_to.send(self.node.clone());
             }
             WorkerMsg::ReplicateEntry { entry } => self.replicate_entry(entry).await,
+            WorkerMsg::AddToReplicationBatch { entry } => {
+                self.add_to_replication_batch(entry).await
+            }
+            WorkerMsg::FlushReplicationBatch => self.flush_replication_batch().await,
         }
     }
 
     async fn replicate_entry(&mut self, entry: Entry) {
-        self.entries_cache.push_front(entry);
-
-        //todo collect logs and then send batch
-        tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(5)) => {},
-            _ = tokio::time::sleep(Duration::from_millis(5)) => {},
-        }
-
-        let request = AppendEntriesRequest {
-            term: self.term,
-            leader_id: self.leader_id,
-            prev_log_index: self.previous_log_index,
-            prev_log_term: self.previous_log_term,
-            entries: Vec::from(self.entries_cache.clone()),
-            leader_commit: self.leader_commit,
-        };
-
-        if let Some(last_entry) = self.entries_cache.front() {
-            self.send_append_request(request, last_entry.index, last_entry.term)
-                .await;
-        }
-
-        //todo implementation
+        self.add_to_replication_batch(entry).await;
+        self.flush_replication_batch().await;
     }
 
-    pub async fn send_append_request(
+    // one of the biggest deviations compared to the original paper. the match and the next index
+    // are not needed here. among other things because of the event based triggering by passing
+    // entries to the worker and keeping them in the cache. maybe a last index has to be
+    // created in case the cache is cleared
+    async fn send_append_request(
         &mut self,
         request: AppendEntriesRequest,
         last_entry_index: u64,
         last_entry_term: u64,
     ) {
-        let ip = self.node.ip.clone();
-        let port = self.node.port;
-        let uri = format!("https://{ip}:{port}");
-
-        match client::append_entry(uri, request).await {
+        match client::append_entry(self.uri.clone(), request).await {
             Ok(response) => {
                 self.term_store.check_term(response.term).await;
                 if response.success_or_granted {
-                    self.next_index = last_entry_index + 1;
-                    self.match_index = last_entry_index;
-                    self.previous_log_index = last_entry_index; //todo get rid of duplicates
-                    self.previous_log_term = last_entry_term;
-                    self.executor
+                    // self.next_index = last_entry_index + 1;
+                    // self.match_index = last_entry_index;
+                    self.state_meta.previous_log_index = last_entry_index; //todo get rid of duplicates
+                    self.state_meta.previous_log_term = last_entry_term;
+                    self.state_meta.leader_commit = self
+                        .executor
                         .register_replication_success(self.node.id, last_entry_index)
                         .await;
+                    self.entries_cache.clear();
+                } else {
+                    // new try with next heartbeat
+                    self.append_previous_entry_to_log_cache().await
                 }
             }
             Err(_) => {
-                //todo implementation
-
-                println!("wrong")
+                // nothing to do, request will be retried with next heartbeat
+                // todo implement dead node logic to prevent unnecessary rpc calls
+                println!("error while sending append entry rpc to {}", self.node.ip)
             }
         }
     }
 
-    pub async fn send_heartbeat() {}
+    async fn append_previous_entry_to_log_cache(&mut self) {
+        // read previous entry from db
+        if let Some(previous_entry) = self
+            .log_store
+            .read_entry(self.state_meta.previous_log_index)
+            .await
+        {
+            // add entry to back of the cache queue
+            self.entries_cache.push_back(previous_entry);
+            // update log metadata
+            if let Some(pre_previous_entry) = self
+                .log_store
+                .read_previous_entry(self.state_meta.previous_log_index)
+                .await
+            {
+                self.state_meta.previous_log_index = pre_previous_entry.index;
+                self.state_meta.previous_log_term = pre_previous_entry.term;
+            };
+        }
+    }
 
-    async fn catch_up_log(&self) {
+    async fn add_to_replication_batch(&mut self, entry: Entry) {
+        self.entries_cache.push_front(entry);
+    }
 
-        //todo implement case when follower does not have current entries in log (via log_store)
+    async fn flush_replication_batch(&mut self) {
+        let request = self.build_append_request().await;
+
+        match self.entries_cache.front() {
+            None => {
+                self.send_append_request(
+                    request,
+                    self.state_meta.previous_log_index,
+                    self.state_meta.previous_log_term,
+                )
+                .await;
+            }
+            Some(last_entry) => {
+                self.send_append_request(request, last_entry.index, last_entry.term)
+                    .await;
+            }
+        }
+    }
+
+    async fn build_append_request(&self) -> AppendEntriesRequest {
+        AppendEntriesRequest {
+            term: self.state_meta.term,
+            leader_id: self.state_meta.leader_id,
+            prev_log_index: self.state_meta.previous_log_index,
+            prev_log_term: self.state_meta.previous_log_term,
+            entries: Vec::from(self.entries_cache.clone()),
+            leader_commit: self.state_meta.leader_commit,
+        }
     }
 }
 
@@ -150,7 +199,7 @@ impl WorkerHandle {
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
         node: Node,
-        state_meta: InitialStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Worker::new(receiver, term_store, log_store, executor, node, state_meta);
@@ -169,8 +218,9 @@ impl WorkerHandle {
 }
 
 #[derive(Clone)]
-pub struct InitialStateMeta {
-    pub last_log_index: u64,
+pub struct StateMeta {
+    // pub last_log_index: u64,
+    // pub last_log_term: u64,
     pub previous_log_index: u64,
     pub previous_log_term: u64,
     pub term: u64,
@@ -201,8 +251,9 @@ mod tests {
             log_store.clone(),
             executor,
             node.clone(),
-            InitialStateMeta {
-                last_log_index: 0,
+            StateMeta {
+                // last_log_index: 0,
+                // last_log_term: 0,
                 previous_log_index: 0,
                 previous_log_term: 0,
                 term: 0,
@@ -211,5 +262,15 @@ mod tests {
             },
         );
         assert_eq!(worker.get_node().await.id, node.id);
+    }
+
+    #[tokio::test]
+    async fn replication_success_test() {
+        //todo implementation
+    }
+
+    #[tokio::test]
+    async fn replication_fail_test() {
+        //todo implementation
     }
 }
