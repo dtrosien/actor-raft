@@ -30,7 +30,7 @@ impl TermStore {
         TermStore {
             receiver,
             watchdog,
-            current_term: 0,
+            current_term: 0, // todo read from db
         }
     }
 

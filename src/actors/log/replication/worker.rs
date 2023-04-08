@@ -33,9 +33,18 @@ struct Worker {
 }
 
 enum WorkerMsg {
-    GetNode { respond_to: oneshot::Sender<Node> },
-    ReplicateEntry { entry: Entry },
-    AddToReplicationBatch { entry: Entry },
+    GetNode {
+        respond_to: oneshot::Sender<Node>,
+    },
+    GetStateMeta {
+        respond_to: oneshot::Sender<StateMeta>,
+    },
+    ReplicateEntry {
+        entry: Entry,
+    },
+    AddToReplicationBatch {
+        entry: Entry,
+    },
     FlushReplicationBatch,
 }
 
@@ -82,6 +91,9 @@ impl Worker {
         match msg {
             WorkerMsg::GetNode { respond_to } => {
                 let _ = respond_to.send(self.node.clone());
+            }
+            WorkerMsg::GetStateMeta { respond_to } => {
+                let _ = respond_to.send(self.state_meta.clone());
             }
             WorkerMsg::ReplicateEntry { entry } => self.replicate_entry(entry).await,
             WorkerMsg::AddToReplicationBatch { entry } => {
@@ -215,6 +227,29 @@ impl WorkerHandle {
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
+
+    async fn get_state_meta(&self) -> StateMeta {
+        let (send, recv) = oneshot::channel();
+        let msg = WorkerMsg::GetStateMeta { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn replicate_entry(&self, entry: Entry) {
+        let msg = WorkerMsg::ReplicateEntry { entry };
+        let _ = self.sender.send(msg).await;
+    }
+
+    pub async fn add_to_replication_batch(&self, entry: Entry) {
+        let msg = WorkerMsg::AddToReplicationBatch { entry };
+        let _ = self.sender.send(msg).await;
+    }
+
+    pub async fn flush_replication_batch(&self) {
+        let msg = WorkerMsg::FlushReplicationBatch;
+        let _ = self.sender.send(msg).await;
+    }
 }
 
 #[derive(Clone)]
@@ -232,9 +267,11 @@ pub struct StateMeta {
 mod tests {
     use super::*;
     use crate::actors::log::test_utils::{get_test_db, TestApp};
+    use crate::actors::watchdog::WatchdogHandle;
+    use crate::rpc::test_tools::{get_test_port, start_test_server, TestServerTrue};
 
     #[tokio::test]
-    async fn id_test() {
+    async fn get_node_test() {
         let term_store = TermStoreHandle::default();
         let log_store = LogStoreHandle::new(get_test_db().await);
         let app = Box::new(TestApp {});
@@ -252,8 +289,6 @@ mod tests {
             executor,
             node.clone(),
             StateMeta {
-                // last_log_index: 0,
-                // last_log_term: 0,
                 previous_log_index: 0,
                 previous_log_term: 0,
                 term: 0,
@@ -266,7 +301,70 @@ mod tests {
 
     #[tokio::test]
     async fn replication_success_test() {
-        //todo implementation
+        // setup of necessary actor dependencies
+        let wd = WatchdogHandle::default();
+        let mut recv = wd.get_exit_receiver().await;
+        let term_store = TermStoreHandle::new(wd.clone());
+        // term must be at least 1 since mock server replies 1
+        term_store.increment_term().await;
+
+        let app = Box::new(TestApp {});
+        let log_store = LogStoreHandle::new(get_test_db().await);
+        log_store.reset_log().await;
+        let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);
+        // test server connection
+        let port = get_test_port().await;
+        let node = Node {
+            id: 0,
+            ip: "[::1]".to_string(),
+            port,
+        };
+
+        // initialize state
+        let meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 1,
+            term: 1,
+            leader_id: 0,
+            leader_commit: 0,
+        };
+
+        let entry = Entry {
+            index: 1,
+            term: 1,
+            leader_commit: 0,
+            payload: "".to_string(),
+        };
+
+        log_store.append_entry(entry.clone()).await;
+        executor.register_worker(node.id).await;
+        let worker = WorkerHandle::new(term_store, log_store, executor, node, meta);
+
+        // start actual test
+
+        assert_eq!(worker.get_state_meta().await.previous_log_index, 0);
+        assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+        assert_eq!(worker.get_state_meta().await.leader_commit, 0);
+
+        let test_future = async {
+            // sleep necessary to make sure that server is up
+            tokio::time::sleep(Duration::from_millis(15)).await;
+            worker.replicate_entry(entry).await;
+            // sleep necessary to make sure that entry is processed
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        };
+
+        tokio::select! {
+            _ = start_test_server(port, TestServerTrue {}) => panic!("server returned first"),
+            _ = recv.recv() => panic!("exit was fired, probably because of term error"),
+            _ = test_future => {
+                assert_eq!(worker.get_state_meta().await.previous_log_index, 1);
+                assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+                assert_eq!(worker.get_state_meta().await.leader_commit, 1);
+                }
+        }
+
+        //todo more appends (and check queue?)
     }
 
     #[tokio::test]
