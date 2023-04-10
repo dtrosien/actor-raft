@@ -2,7 +2,7 @@ use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::worker::{StateMeta, WorkerHandle};
 use crate::actors::term_store::TermStoreHandle;
-use crate::actors::watchdog::WatchdogHandle;
+
 use crate::config::Config;
 use crate::raft_rpc::append_entries_request::Entry;
 use std::collections::BTreeMap;
@@ -166,13 +166,14 @@ mod tests {
     use crate::actors::log::log_store::LogStoreHandle;
     use crate::actors::log::test_utils::{get_test_db, TestApp};
     use crate::actors::term_store::TermStoreHandle;
-    use crate::rpc::test_tools::{start_test_server, TestServerTrue};
+    use crate::actors::watchdog::WatchdogHandle;
+    use crate::rpc::test_tools::{start_test_server, TestServerFalse, TestServerTrue};
     use std::time::Duration;
     use tokio::sync::broadcast;
 
     #[tokio::test]
     async fn term_test() {
-        let (config, log_store, executor, term_store, mut error_recv) =
+        let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
             prepare_test_dependencies().await;
         let state_meta = StateMeta {
             previous_log_index: 0,
@@ -189,26 +190,8 @@ mod tests {
 
     #[tokio::test]
     async fn replication_test() {
-        let (config, log_store, executor, term_store, mut error_recv) =
+        let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
             prepare_test_dependencies().await;
-
-        let state_meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 0,
-            term: 1,
-            leader_id: 0,
-            leader_commit: 0,
-        };
-
-        let replicator = ReplicatorHandle::new(
-            executor.clone(),
-            term_store.clone(),
-            log_store.clone(),
-            config.clone(),
-            state_meta.clone(),
-        );
-
-        replicator.register_workers_at_executor().await;
 
         let entry = Entry {
             index: 1,
@@ -240,8 +223,47 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn batch_replication_test() {
+        let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
+            prepare_test_dependencies().await;
+
+        for i in 1..=100 {
+            let entry = Entry {
+                index: i,
+                term: 1,
+                leader_commit: 0,
+                payload: "".to_string(),
+            };
+            replicator.add_to_batch(entry.clone()).await;
+            log_store.append_entry(entry.clone()).await;
+        }
+
+        let test_future = async {
+            // sleep required to make sure that server is up
+            tokio::time::sleep(Duration::from_millis(15)).await;
+            replicator.flush_batch().await;
+            // sleep required to make sure that worker can process entry
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        };
+
+        // wait for test future or servers to return
+        tokio::select! {
+            _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
+            _ = start_test_server(config.nodes[0].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[0].id),
+            _ = start_test_server(config.nodes[1].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[1].id),
+            _ = start_test_server(config.nodes[2].port, TestServerFalse {}) => panic!("server {} returned first",config.nodes[2].id),
+            _ = start_test_server(config.nodes[3].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[3].id),
+            _ = test_future => {
+                assert_eq!(executor.get_commit_index().await,100);
+                }
+        }
+    }
+
     async fn prepare_test_dependencies() -> (
         Config,
+        StateMeta,
+        ReplicatorHandle,
         LogStoreHandle,
         ExecutorHandle,
         TermStoreHandle,
@@ -259,6 +281,26 @@ mod tests {
 
         let config = Config::for_test().await;
 
-        (config, log_store, executor, term_store, error_recv)
+        let state_meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 0,
+            term: 1,
+            leader_id: 0,
+            leader_commit: 0,
+        };
+
+        let replicator = ReplicatorHandle::new(
+            executor.clone(),
+            term_store.clone(),
+            log_store.clone(),
+            config.clone(),
+            state_meta.clone(),
+        );
+
+        replicator.register_workers_at_executor().await;
+
+        (
+            config, state_meta, replicator, log_store, executor, term_store, error_recv,
+        )
     }
 }
