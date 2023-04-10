@@ -19,6 +19,9 @@ enum ReplicatorMsg {
     SetTerm { term: u64 },
     GetTerm { respond_to: oneshot::Sender<u64> },
     ReplicateEntry { entry: Entry },
+    AddToBatch { entry: Entry },
+    FlushBatch,
+    RegisterWorkers,
 }
 
 impl Replicator {
@@ -69,19 +72,35 @@ impl Replicator {
                 let _ = respond_to.send(self.term);
             }
             ReplicatorMsg::ReplicateEntry { entry } => self.replicate_entry(entry).await,
+            ReplicatorMsg::AddToBatch { entry } => self.add_to_batch(entry).await,
+            ReplicatorMsg::FlushBatch => self.flush_batch().await,
+            ReplicatorMsg::RegisterWorkers => self.register_workers_at_executor().await,
         }
     }
 
     async fn replicate_entry(&self, entry: Entry) {
-        //todo implementation
+        for worker in self.workers.values() {
+            worker.replicate_entry(entry.clone()).await;
+        }
     }
 
     async fn add_to_batch(&self, entry: Entry) {
-        //todo implementation
+        for worker in self.workers.values() {
+            worker.add_to_replication_batch(entry.clone()).await;
+        }
     }
 
-    async fn send_batch(&self) {
-        //todo implementation
+    // can be used for sending heartbeats
+    async fn flush_batch(&self) {
+        for worker in self.workers.values() {
+            worker.flush_replication_batch().await;
+        }
+    }
+
+    async fn register_workers_at_executor(&self) {
+        for worker in self.workers.keys() {
+            self.executor.register_worker(*worker).await;
+        }
     }
 }
 
@@ -112,6 +131,21 @@ impl ReplicatorHandle {
         let _ = self.sender.send(msg).await;
     }
 
+    pub async fn add_to_batch(&self, entry: Entry) {
+        let msg = ReplicatorMsg::AddToBatch { entry };
+        let _ = self.sender.send(msg).await;
+    }
+
+    pub async fn flush_batch(&self) {
+        let msg = ReplicatorMsg::FlushBatch;
+        let _ = self.sender.send(msg).await;
+    }
+
+    pub async fn register_workers_at_executor(&self) {
+        let msg = ReplicatorMsg::RegisterWorkers;
+        let _ = self.sender.send(msg).await;
+    }
+
     pub async fn set_term(&self, term: u64) {
         let msg = ReplicatorMsg::SetTerm { term };
         let _ = self.sender.send(msg).await;
@@ -132,28 +166,99 @@ mod tests {
     use crate::actors::log::log_store::LogStoreHandle;
     use crate::actors::log::test_utils::{get_test_db, TestApp};
     use crate::actors::term_store::TermStoreHandle;
+    use crate::rpc::test_tools::{start_test_server, TestServerTrue};
+    use std::time::Duration;
+    use tokio::sync::broadcast;
 
     #[tokio::test]
     async fn term_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
-        let app = Box::new(TestApp {});
-        let executor = ExecutorHandle::new(log_store.clone(), 0, app);
-        let term_store = TermStoreHandle::default();
-        let config = Config::for_test().await;
-        let last_log_index = log_store.get_last_log_index().await;
-        let leader_commit = executor.get_commit_index().await;
+        let (config, log_store, executor, term_store, mut error_recv) =
+            prepare_test_dependencies().await;
         let state_meta = StateMeta {
-            // last_log_index,
-            // last_log_term: 0,
             previous_log_index: 0,
             previous_log_term: 0,
             term: 0,
             leader_id: 0,
-            leader_commit,
+            leader_commit: 0,
         };
 
         let replicator = ReplicatorHandle::new(executor, term_store, log_store, config, state_meta);
         replicator.set_term(1).await;
         assert_eq!(replicator.get_term().await, 1);
+    }
+
+    #[tokio::test]
+    async fn replication_test() {
+        let (config, log_store, executor, term_store, mut error_recv) =
+            prepare_test_dependencies().await;
+
+        let state_meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 0,
+            term: 1,
+            leader_id: 0,
+            leader_commit: 0,
+        };
+
+        let replicator = ReplicatorHandle::new(
+            executor.clone(),
+            term_store.clone(),
+            log_store.clone(),
+            config.clone(),
+            state_meta.clone(),
+        );
+
+        replicator.register_workers_at_executor().await;
+
+        let entry = Entry {
+            index: 1,
+            term: 1,
+            leader_commit: 0,
+            payload: "".to_string(),
+        };
+
+        log_store.append_entry(entry.clone()).await;
+
+        let test_future = async {
+            // sleep required to make sure that server is up
+            tokio::time::sleep(Duration::from_millis(15)).await;
+            replicator.replicate_entry(entry).await;
+            // sleep required to make sure that worker can process entry
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        };
+
+        // wait for test future or servers to return
+        tokio::select! {
+            _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
+            _ = start_test_server(config.nodes[0].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[0].id),
+            _ = start_test_server(config.nodes[1].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[1].id),
+            _ = start_test_server(config.nodes[2].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[2].id),
+            _ = start_test_server(config.nodes[3].port, TestServerTrue {}) => panic!("server {} returned first",config.nodes[3].id),
+            _ = test_future => {
+                assert_eq!(executor.get_commit_index().await,1);
+                }
+        }
+    }
+
+    async fn prepare_test_dependencies() -> (
+        Config,
+        LogStoreHandle,
+        ExecutorHandle,
+        TermStoreHandle,
+        broadcast::Receiver<()>,
+    ) {
+        let wd = WatchdogHandle::default();
+        let error_recv = wd.get_exit_receiver().await;
+        let term_store = TermStoreHandle::new(wd.clone());
+        // term must be at least 1 since mock server replies 1
+        term_store.increment_term().await;
+        let log_store = LogStoreHandle::new(get_test_db().await);
+        log_store.reset_log().await;
+        let app = Box::new(TestApp {});
+        let executor = ExecutorHandle::new(log_store.clone(), 1, app);
+
+        let config = Config::for_test().await;
+
+        (config, log_store, executor, term_store, error_recv)
     }
 }
