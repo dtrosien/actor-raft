@@ -12,7 +12,7 @@ struct Initiator {
     term_store: TermStoreHandle,
     counter: CounterHandle,
     workers: BTreeMap<u64, WorkerHandle>,
-    voted_for: Option<u64>,
+    voted_for: Option<u64>, //todo read from db
     id: u64,
     last_log_index: u64,
     last_log_term: u64,
@@ -182,7 +182,7 @@ fn calculate_required_votes(nodes_num: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rpc::test_tools::{start_test_server, TestServerTrue};
+    use crate::rpc::test_utils::{start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]

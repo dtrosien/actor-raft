@@ -99,7 +99,7 @@ impl WorkerHandle {
 mod tests {
     use super::*;
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::rpc::test_tools::{get_test_port, start_test_server, TestServerTrue};
+    use crate::rpc::test_utils::{get_test_port, start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]

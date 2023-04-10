@@ -258,7 +258,7 @@ mod tests {
     use super::*;
     use crate::actors::log::test_utils::{get_test_db, TestApp};
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::rpc::test_tools::{
+    use crate::rpc::test_utils::{
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
     use std::time::Duration;

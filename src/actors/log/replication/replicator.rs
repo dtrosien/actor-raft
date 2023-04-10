@@ -167,7 +167,7 @@ mod tests {
     use crate::actors::log::test_utils::{get_test_db, TestApp};
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::rpc::test_tools::{start_test_server, TestServerFalse, TestServerTrue};
+    use crate::rpc::test_utils::{start_test_server, TestServerFalse, TestServerTrue};
     use std::time::Duration;
     use tokio::sync::broadcast;
 
