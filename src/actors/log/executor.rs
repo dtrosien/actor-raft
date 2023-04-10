@@ -2,7 +2,7 @@ use crate::actors::log::log_store::LogStoreHandle;
 use crate::raft_rpc::append_entries_request::Entry;
 
 use std::cmp::min;
-use std::collections::hash_map::Entry::Occupied;
+use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
 use std::error::Error;
 use tokio::sync::{mpsc, oneshot};
@@ -130,8 +130,10 @@ impl Executor {
     }
 
     async fn register_worker(&mut self, worker_id: u64) {
-        //sets key to id and value to 0 if not exists , else returns value
-        self.match_index.entry(worker_id).or_insert(0);
+        if let Vacant(_) = self.match_index.entry(worker_id) {
+            self.num_workers += 1;
+            self.match_index.insert(worker_id, 0);
+        }
     }
 
     // used in leader state (see last paragraph for leader in raft paper)
@@ -140,7 +142,7 @@ impl Executor {
             entry.insert(index);
             if index > self.commit_index {
                 let potential_commit_index =
-                    new_commit_index(&mut self.match_index, self.commit_index, index);
+                    new_commit_index(&mut self.match_index, self.commit_index, self.num_workers);
 
                 //todo is the termcheck possible without reading the log from disk?
                 if let Some(entry) = self.log_store.read_entry(potential_commit_index).await {
