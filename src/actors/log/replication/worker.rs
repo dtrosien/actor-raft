@@ -5,11 +5,9 @@ use crate::config::Node;
 use crate::raft_rpc::append_entries_request::Entry;
 use crate::raft_rpc::AppendEntriesRequest;
 use crate::rpc::client;
-use crate::rpc::client::Reply;
-use std::time::Duration;
 
 use std::collections::VecDeque;
-use std::error::Error;
+
 use tokio::sync::{mpsc, oneshot};
 
 struct Worker {
@@ -19,8 +17,6 @@ struct Worker {
     executor: ExecutorHandle,
     node: Node,
     uri: String,
-    // next_index: u64,
-    // match_index: u64,
     state_meta: StateMeta,
     entries_cache: VecDeque<Entry>,
 }
@@ -63,8 +59,6 @@ impl Worker {
             executor,
             node,
             uri,
-            // next_index: state_meta.last_log_index + 1,
-            // match_index: 0,
             state_meta,
             entries_cache: Default::default(),
         }
@@ -114,9 +108,7 @@ impl Worker {
             Ok(response) => {
                 self.term_store.check_term(response.term).await;
                 if response.success_or_granted {
-                    // self.next_index = last_entry_index + 1;
-                    // self.match_index = last_entry_index;
-                    self.state_meta.previous_log_index = last_entry_index; //todo get rid of duplicates
+                    self.state_meta.previous_log_index = last_entry_index;
                     self.state_meta.previous_log_term = last_entry_term;
                     self.state_meta.leader_commit = self
                         .executor
@@ -254,8 +246,6 @@ impl WorkerHandle {
 
 #[derive(Clone)]
 pub struct StateMeta {
-    // pub last_log_index: u64,
-    // pub last_log_term: u64,
     pub previous_log_index: u64,
     pub previous_log_term: u64,
     pub term: u64,
@@ -268,7 +258,10 @@ mod tests {
     use super::*;
     use crate::actors::log::test_utils::{get_test_db, TestApp};
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::rpc::test_tools::{get_test_port, start_test_server, TestServerTrue};
+    use crate::rpc::test_tools::{
+        get_test_port, start_test_server, TestServerFalse, TestServerTrue,
+    };
+    use std::time::Duration;
     use tokio::sync::broadcast;
 
     #[tokio::test]
@@ -385,7 +378,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(15)).await;
             worker.flush_replication_batch().await;
             // sleep necessary to make sure that entry is processed
-            tokio::time::sleep(Duration::from_millis(150)).await;
+            tokio::time::sleep(Duration::from_millis(15)).await;
         };
 
         tokio::select! {
@@ -402,7 +395,77 @@ mod tests {
 
     #[tokio::test]
     async fn replication_fail_test() {
-        //todo implementation
+        // setup of required actor dependencies
+        let (port, node, log_store, executor, term_store, mut error_recv) =
+            prepare_test_dependencies().await;
+
+        // initialize state
+        let meta = StateMeta {
+            previous_log_index: 10,
+            previous_log_term: 1,
+            term: 1,
+            leader_id: 0,
+            leader_commit: 10,
+        };
+
+        executor.register_worker(node.id).await;
+        let worker = WorkerHandle::new(term_store, log_store.clone(), executor, node, meta);
+
+        // start actual test
+
+        assert!(worker.get_cached_entries().await.is_empty());
+        // old entries not in cache
+        for i in 1..=10 {
+            let entry = Entry {
+                index: i,
+                term: 1,
+                leader_commit: 0,
+                payload: "".to_string(),
+            };
+            log_store.append_entry(entry.clone()).await;
+        }
+
+        // new entries still in cache
+        for i in 11..=15 {
+            let entry = Entry {
+                index: i,
+                term: 1,
+                leader_commit: 10,
+                payload: "".to_string(),
+            };
+            log_store.append_entry(entry.clone()).await;
+            worker.add_to_replication_batch(entry).await;
+        }
+
+        assert_eq!(worker.get_state_meta().await.previous_log_index, 10);
+        assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+        assert_eq!(worker.get_state_meta().await.leader_commit, 10);
+        assert_eq!(worker.get_cached_entries().await.len(), 5);
+
+        let test_future = async {
+            // sleep necessary to make sure that server is up
+            tokio::time::sleep(Duration::from_millis(15)).await;
+
+            // flush twice to simulate two retries
+            worker.flush_replication_batch().await;
+            worker.flush_replication_batch().await;
+
+            // sleep necessary to make sure that entry is processed
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        };
+
+        tokio::select! {
+            _ = start_test_server(port, TestServerFalse {}) => panic!("server returned first"),
+            _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
+            _ = test_future => {
+                assert_eq!(worker.get_state_meta().await.previous_log_index, 8);
+                assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+                assert_eq!(worker.get_state_meta().await.leader_commit, 10);
+                assert_eq!(worker.get_cached_entries().await.len(), 7);
+                assert_eq!(worker.get_cached_entries().await.pop_front().unwrap().index ,15);
+                assert_eq!(worker.get_cached_entries().await.pop_back().unwrap().index, 9);
+                }
+        }
     }
 
     async fn prepare_test_dependencies() -> (
