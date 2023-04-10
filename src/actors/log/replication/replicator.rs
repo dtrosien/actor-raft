@@ -72,7 +72,17 @@ impl Replicator {
         }
     }
 
-    async fn replicate_entry(&self, entry: Entry) {}
+    async fn replicate_entry(&self, entry: Entry) {
+        //todo implementation
+    }
+
+    async fn add_to_batch(&self, entry: Entry) {
+        //todo implementation
+    }
+
+    async fn send_batch(&self) {
+        //todo implementation
+    }
 }
 
 #[derive(Clone)]
