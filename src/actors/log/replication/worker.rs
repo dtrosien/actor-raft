@@ -21,13 +21,6 @@ struct Worker {
     uri: String,
     // next_index: u64,
     // match_index: u64,
-    // last_log_index: u64,
-    // last_log_term: u64,
-    // previous_log_index: u64,
-    // previous_log_term: u64,
-    // term: u64,
-    // leader_id: u64,
-    // leader_commit: u64,
     state_meta: StateMeta,
     entries_cache: VecDeque<Entry>,
 }
@@ -38,6 +31,9 @@ enum WorkerMsg {
     },
     GetStateMeta {
         respond_to: oneshot::Sender<StateMeta>,
+    },
+    GetCachedEntries {
+        respond_to: oneshot::Sender<VecDeque<Entry>>,
     },
     ReplicateEntry {
         entry: Entry,
@@ -69,13 +65,6 @@ impl Worker {
             uri,
             // next_index: state_meta.last_log_index + 1,
             // match_index: 0,
-            // last_log_index: state_meta.last_log_index,
-            // last_log_term: state_meta.last_log_term,
-            // previous_log_index: state_meta.previous_log_index,
-            // previous_log_term: state_meta.previous_log_term,
-            // term: state_meta.term,
-            // leader_id: state_meta.leader_id,
-            // leader_commit: state_meta.leader_commit,
             state_meta,
             entries_cache: Default::default(),
         }
@@ -94,6 +83,9 @@ impl Worker {
             }
             WorkerMsg::GetStateMeta { respond_to } => {
                 let _ = respond_to.send(self.state_meta.clone());
+            }
+            WorkerMsg::GetCachedEntries { respond_to } => {
+                let _ = respond_to.send(self.entries_cache.clone());
             }
             WorkerMsg::ReplicateEntry { entry } => self.replicate_entry(entry).await,
             WorkerMsg::AddToReplicationBatch { entry } => {
@@ -236,6 +228,14 @@ impl WorkerHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    async fn get_cached_entries(&self) -> VecDeque<Entry> {
+        let (send, recv) = oneshot::channel();
+        let msg = WorkerMsg::GetCachedEntries { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
     pub async fn replicate_entry(&self, entry: Entry) {
         let msg = WorkerMsg::ReplicateEntry { entry };
         let _ = self.sender.send(msg).await;
@@ -269,56 +269,32 @@ mod tests {
     use crate::actors::log::test_utils::{get_test_db, TestApp};
     use crate::actors::watchdog::WatchdogHandle;
     use crate::rpc::test_tools::{get_test_port, start_test_server, TestServerTrue};
+    use tokio::sync::broadcast;
 
     #[tokio::test]
     async fn get_node_test() {
-        let term_store = TermStoreHandle::default();
-        let log_store = LogStoreHandle::new(get_test_db().await);
-        let app = Box::new(TestApp {});
+        let (_port, node, log_store, executor, term_store, mut _error_recv) =
+            prepare_test_dependencies().await;
 
-        let executor = ExecutorHandle::new(log_store.clone(), 0, app);
-        let node = Node {
-            id: 0,
-            ip: "".to_string(),
-            port: 0,
+        // initialize state
+        let meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 1,
+            term: 1,
+            leader_id: 0,
+            leader_commit: 0,
         };
 
-        let worker = WorkerHandle::new(
-            term_store,
-            log_store.clone(),
-            executor,
-            node.clone(),
-            StateMeta {
-                previous_log_index: 0,
-                previous_log_term: 0,
-                term: 0,
-                leader_id: 0,
-                leader_commit: 0,
-            },
-        );
+        let worker = WorkerHandle::new(term_store, log_store, executor, node.clone(), meta);
+
         assert_eq!(worker.get_node().await.id, node.id);
     }
 
     #[tokio::test]
     async fn replication_success_test() {
-        // setup of necessary actor dependencies
-        let wd = WatchdogHandle::default();
-        let mut recv = wd.get_exit_receiver().await;
-        let term_store = TermStoreHandle::new(wd.clone());
-        // term must be at least 1 since mock server replies 1
-        term_store.increment_term().await;
-
-        let app = Box::new(TestApp {});
-        let log_store = LogStoreHandle::new(get_test_db().await);
-        log_store.reset_log().await;
-        let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);
-        // test server connection
-        let port = get_test_port().await;
-        let node = Node {
-            id: 0,
-            ip: "[::1]".to_string(),
-            port,
-        };
+        // setup of required actor dependencies
+        let (port, node, log_store, executor, term_store, mut error_recv) =
+            prepare_test_dependencies().await;
 
         // initialize state
         let meta = StateMeta {
@@ -356,19 +332,105 @@ mod tests {
 
         tokio::select! {
             _ = start_test_server(port, TestServerTrue {}) => panic!("server returned first"),
-            _ = recv.recv() => panic!("exit was fired, probably because of term error"),
+            _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
             _ = test_future => {
                 assert_eq!(worker.get_state_meta().await.previous_log_index, 1);
                 assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
                 assert_eq!(worker.get_state_meta().await.leader_commit, 1);
+                assert!(worker.get_cached_entries().await.is_empty())
                 }
         }
+    }
 
-        //todo more appends (and check queue?)
+    #[tokio::test]
+    async fn batch_replication_success_test() {
+        // setup of required actor dependencies
+        let (port, node, log_store, executor, term_store, mut error_recv) =
+            prepare_test_dependencies().await;
+
+        // initialize state
+        let meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 1,
+            term: 1,
+            leader_id: 0,
+            leader_commit: 0,
+        };
+
+        executor.register_worker(node.id).await;
+        let worker = WorkerHandle::new(term_store, log_store.clone(), executor, node, meta);
+
+        // start actual test
+
+        assert!(worker.get_cached_entries().await.is_empty());
+
+        for i in 1..=100 {
+            let entry = Entry {
+                index: i,
+                term: 1,
+                leader_commit: 0,
+                payload: "".to_string(),
+            };
+            worker.add_to_replication_batch(entry.clone()).await;
+            log_store.append_entry(entry.clone()).await;
+        }
+
+        assert_eq!(worker.get_state_meta().await.previous_log_index, 0);
+        assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+        assert_eq!(worker.get_state_meta().await.leader_commit, 0);
+        assert_eq!(worker.get_cached_entries().await.len(), 100);
+
+        let test_future = async {
+            // sleep necessary to make sure that server is up
+            tokio::time::sleep(Duration::from_millis(15)).await;
+            worker.flush_replication_batch().await;
+            // sleep necessary to make sure that entry is processed
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        };
+
+        tokio::select! {
+            _ = start_test_server(port, TestServerTrue {}) => panic!("server returned first"),
+            _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
+            _ = test_future => {
+                assert_eq!(worker.get_state_meta().await.previous_log_index, 100);
+                assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+                assert_eq!(worker.get_state_meta().await.leader_commit, 100);
+                assert!(worker.get_cached_entries().await.is_empty())
+                }
+        }
     }
 
     #[tokio::test]
     async fn replication_fail_test() {
         //todo implementation
+    }
+
+    async fn prepare_test_dependencies() -> (
+        u16,
+        Node,
+        LogStoreHandle,
+        ExecutorHandle,
+        TermStoreHandle,
+        broadcast::Receiver<()>,
+    ) {
+        let wd = WatchdogHandle::default();
+        let error_recv = wd.get_exit_receiver().await;
+        let term_store = TermStoreHandle::new(wd.clone());
+        // term must be at least 1 since mock server replies 1
+        term_store.increment_term().await;
+
+        let app = Box::new(TestApp {});
+        let log_store = LogStoreHandle::new(get_test_db().await);
+        log_store.reset_log().await;
+        let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);
+        // test server connection
+        let port = get_test_port().await;
+        let node = Node {
+            id: 0,
+            ip: "[::1]".to_string(),
+            port,
+        };
+
+        (port, node, log_store, executor, term_store, error_recv)
     }
 }
