@@ -164,9 +164,10 @@ impl ReplicatorHandle {
 mod tests {
     use super::*;
     use crate::actors::log::log_store::LogStoreHandle;
-    use crate::actors::log::test_utils::{get_test_db, TestApp};
+    use crate::actors::log::test_utils::TestApp;
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
+    use crate::db::test_utils::get_test_db;
     use crate::rpc::test_utils::{start_test_server, TestServerFalse, TestServerTrue};
     use std::time::Duration;
     use tokio::sync::broadcast;
@@ -271,7 +272,7 @@ mod tests {
     ) {
         let wd = WatchdogHandle::default();
         let error_recv = wd.get_exit_receiver().await;
-        let term_store = TermStoreHandle::new(wd.clone());
+        let term_store = TermStoreHandle::new(wd.clone(), get_test_db().await);
         // term must be at least 1 since mock server replies 1
         term_store.increment_term().await;
         let log_store = LogStoreHandle::new(get_test_db().await);

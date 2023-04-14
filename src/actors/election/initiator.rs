@@ -182,13 +182,15 @@ fn calculate_required_votes(nodes_num: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::get_test_db;
     use crate::rpc::test_utils::{start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]
     async fn get_voted_for_test() {
         let watchdog = WatchdogHandle::default();
-        let term_store = TermStoreHandle::new(watchdog.clone());
+        let db_path = get_test_db().await;
+        let term_store = TermStoreHandle::new(watchdog.clone(), db_path);
         let config = Config::new();
         let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
         assert_eq!(initiator.get_voted_for().await, None);
@@ -197,7 +199,8 @@ mod tests {
     #[tokio::test]
     async fn get_worker_test() {
         let watchdog = WatchdogHandle::default();
-        let term_store = TermStoreHandle::new(watchdog.clone());
+        let db_path = get_test_db().await;
+        let term_store = TermStoreHandle::new(watchdog.clone(), db_path);
         let config = Config::for_test().await;
         let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
 
@@ -216,18 +219,20 @@ mod tests {
     #[tokio::test]
     async fn start_election_test() {
         let watchdog = WatchdogHandle::default();
-        let term_store = TermStoreHandle::new(watchdog.clone());
+        let db_path = get_test_db().await;
+        let term_store = TermStoreHandle::new(watchdog.clone(), db_path);
+        term_store.reset_term().await;
 
         let config = Config::for_test().await;
-        let initiator = InitiatorHandle::new(term_store, watchdog, config.clone()).await;
+        let initiator = InitiatorHandle::new(term_store, watchdog.clone(), config.clone()).await;
         let counter = initiator.get_counter().await;
 
         let test_future = async {
             // sleep necessary to make sure that server is up
-            tokio::time::sleep(Duration::from_millis(5)).await;
+            tokio::time::sleep(Duration::from_millis(15)).await;
             initiator.start_election().await;
             // sleep necessary to make sure that vote is processed before getting the count
-            tokio::time::sleep(Duration::from_millis(15)).await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
         };
 
         // wait for test future or servers to return

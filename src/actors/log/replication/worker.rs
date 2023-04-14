@@ -256,8 +256,9 @@ pub struct StateMeta {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::log::test_utils::{get_test_db, TestApp};
+    use crate::actors::log::test_utils::TestApp;
     use crate::actors::watchdog::WatchdogHandle;
+    use crate::db::test_utils::get_test_db;
     use crate::rpc::test_utils::{
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
@@ -478,7 +479,9 @@ mod tests {
     ) {
         let wd = WatchdogHandle::default();
         let error_recv = wd.get_exit_receiver().await;
-        let term_store = TermStoreHandle::new(wd.clone());
+        let term_store = TermStoreHandle::new(wd.clone(), get_test_db().await);
+        term_store.reset_term().await;
+
         // term must be at least 1 since mock server replies 1
         term_store.increment_term().await;
 

@@ -283,7 +283,8 @@ fn calculate_required_replicas(num_worker: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::log::test_utils::{get_test_db, TestApp};
+    use crate::actors::log::test_utils::TestApp;
+    use crate::db::test_utils::get_test_db;
 
     #[tokio::test]
     async fn get_commit_index_test() {

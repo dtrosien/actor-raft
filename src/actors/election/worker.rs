@@ -99,13 +99,14 @@ impl WorkerHandle {
 mod tests {
     use super::*;
     use crate::actors::watchdog::WatchdogHandle;
+    use crate::db::test_utils::get_test_db;
     use crate::rpc::test_utils::{get_test_port, start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]
     async fn get_node_test() {
         let watchdog = WatchdogHandle::default();
-        let term_store = TermStoreHandle::new(watchdog.clone());
+        let term_store = TermStoreHandle::new(watchdog.clone(), get_test_db().await);
         let votes_required: u64 = 3;
         let counter = CounterHandle::new(watchdog, votes_required).await;
         let node = Node {
@@ -122,7 +123,7 @@ mod tests {
     async fn request_vote_test() {
         // initialise test setup
         let watchdog = WatchdogHandle::default();
-        let term_store = TermStoreHandle::new(watchdog.clone());
+        let term_store = TermStoreHandle::new(watchdog.clone(), get_test_db().await);
         let votes_required: u64 = 3;
         let counter = CounterHandle::new(watchdog, votes_required).await;
         let port = get_test_port().await;

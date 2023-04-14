@@ -1,4 +1,4 @@
-use crate::db::RaftDb;
+use crate::db::raft_db::RaftDb;
 use crate::raft_rpc::append_entries_request::Entry;
 use std::collections::VecDeque;
 use std::error::Error;
@@ -45,7 +45,9 @@ enum LogStoreMsg {
     ReadLastEntry {
         respond_to: oneshot::Sender<Option<Entry>>,
     },
-    ResetLog,
+    ResetLog {
+        respond_to: oneshot::Sender<()>,
+    },
 }
 
 impl LogStore {
@@ -102,7 +104,9 @@ impl LogStore {
             LogStoreMsg::ReadPreviousEntry { respond_to, index } => {
                 let _ = respond_to.send(self.read_previous_entry(index).await);
             }
-            LogStoreMsg::ResetLog => self.reset_log().await,
+            LogStoreMsg::ResetLog { respond_to } => {
+                let _ = respond_to.send(self.reset_log().await);
+            }
         }
     }
 
@@ -191,7 +195,7 @@ impl LogStore {
         self.db
             .clear_db()
             .await
-            .expect("Corrupt DB: delete manually");
+            .expect("log_store db seems to be corrupted, delete manually");
         self.previous_log_term = 0;
         self.previous_log_index = 0;
         self.last_log_term = 0;
@@ -272,8 +276,10 @@ impl LogStoreHandle {
     }
 
     pub async fn reset_log(&self) {
-        let msg = LogStoreMsg::ResetLog;
+        let (send, recv) = oneshot::channel();
+        let msg = LogStoreMsg::ResetLog { respond_to: send };
         let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
     }
 
     pub async fn get_last_log_index(&self) -> u64 {
@@ -308,17 +314,9 @@ impl LogStoreHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::get_test_db;
     use once_cell::sync::Lazy;
     use tokio::sync::Mutex;
-
-    // global var used to offer unique dbs for each log store in unit tests to prevent concurrency issues while testing
-    static DB_COUNTER: Lazy<Mutex<u16>> = Lazy::new(|| Mutex::new(0));
-    // get number from GLOBAL_DB_COUNTER
-    pub async fn get_test_db() -> String {
-        let mut i = DB_COUNTER.lock().await;
-        *i += 1;
-        format!("databases/log-store-test-db_{}", *i)
-    }
 
     #[tokio::test]
     async fn append_entry_test() {
