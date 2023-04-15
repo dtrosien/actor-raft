@@ -42,7 +42,7 @@ impl RaftDb {
         Ok(())
     }
 
-    pub async fn read_voted_for(&self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
+    pub fn read_voted_for(&self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.get(b"voted_for")? {
             Some(voted_for) => {
                 let voted_for: u64 = bincode::deserialize(&voted_for)?;
@@ -187,7 +187,7 @@ mod tests {
         db.clear_db().await.unwrap();
 
         db.store_voted_for(voted_for).await.unwrap();
-        assert_eq!(voted_for, db.read_voted_for().await.unwrap().unwrap());
+        assert_eq!(voted_for, db.read_voted_for().unwrap().unwrap());
     }
 
     #[tokio::test]

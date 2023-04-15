@@ -3,6 +3,7 @@ use crate::actors::election::worker::WorkerHandle;
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::{Config, Node};
+use crate::db::raft_db::RaftDb;
 use crate::raft_rpc::RequestVoteRequest;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
@@ -12,7 +13,8 @@ struct Initiator {
     term_store: TermStoreHandle,
     counter: CounterHandle,
     workers: BTreeMap<u64, WorkerHandle>,
-    voted_for: Option<u64>, //todo read from db
+    db: RaftDb,
+    voted_for: Option<u64>,
     id: u64,
     last_log_index: u64,
     last_log_term: u64,
@@ -21,6 +23,9 @@ struct Initiator {
 enum InitiatorMsg {
     GetVotedFor {
         respond_to: oneshot::Sender<Option<u64>>,
+    },
+    SetVotedFor {
+        voted_for: u64,
     },
     GetWorker {
         respond_to: oneshot::Sender<Option<WorkerHandle>>,
@@ -34,6 +39,9 @@ enum InitiatorMsg {
         last_log_term: u64,
     },
     StartElection,
+    ResetVotedFor {
+        respond_to: oneshot::Sender<()>,
+    },
 }
 
 impl Initiator {
@@ -42,7 +50,12 @@ impl Initiator {
         term: TermStoreHandle,
         watchdog: WatchdogHandle,
         config: Config,
+        path: String,
     ) -> Self {
+        let db = RaftDb::new(path);
+        let voted_for = db
+            .read_voted_for()
+            .expect("vote_store db seems to be corrupted");
         let votes_required = calculate_required_votes(config.nodes.len() as u64);
         let id = config.id;
         let counter = CounterHandle::new(watchdog, votes_required).await;
@@ -61,7 +74,8 @@ impl Initiator {
             term_store: term,
             counter,
             workers,
-            voted_for: None,
+            db,
+            voted_for,
             id,
             last_log_index: 0,
             last_log_term: 0,
@@ -79,6 +93,8 @@ impl Initiator {
             InitiatorMsg::GetVotedFor { respond_to } => {
                 let _ = respond_to.send(self.voted_for);
             }
+            InitiatorMsg::SetVotedFor { voted_for } => self.set_voted_for(voted_for).await,
+
             InitiatorMsg::GetWorker { respond_to, id } => {
                 let _ = respond_to.send(self.get_worker(id));
             }
@@ -90,6 +106,12 @@ impl Initiator {
                 last_log_term,
             } => self.set_last_log_meta(last_log_index, last_log_term),
             InitiatorMsg::StartElection => self.start_election().await,
+            InitiatorMsg::ResetVotedFor { respond_to } => {
+                let _ = {
+                    self.reset_voted_for().await;
+                    respond_to.send(())
+                };
+            }
         }
     }
 
@@ -121,6 +143,22 @@ impl Initiator {
     fn get_worker(&self, id: u64) -> Option<WorkerHandle> {
         self.workers.get(&id).cloned()
     }
+
+    async fn reset_voted_for(&mut self) {
+        self.voted_for = None;
+        self.db
+            .clear_db()
+            .await
+            .expect("vote_store db seems to be corrupted, delete manually")
+    }
+
+    async fn set_voted_for(&mut self, voted_for: u64) {
+        self.voted_for = Some(voted_for);
+        self.db
+            .store_voted_for(voted_for)
+            .await
+            .expect("term_store db seems to be corrupted");
+    }
 }
 
 #[derive(Clone)]
@@ -129,9 +167,14 @@ pub struct InitiatorHandle {
 }
 
 impl InitiatorHandle {
-    pub async fn new(term: TermStoreHandle, watchdog: WatchdogHandle, config: Config) -> Self {
+    pub async fn new(
+        term: TermStoreHandle,
+        watchdog: WatchdogHandle,
+        config: Config,
+        db_path: String,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut initiator = Initiator::new(receiver, term, watchdog, config).await;
+        let mut initiator = Initiator::new(receiver, term, watchdog, config, db_path).await;
         tokio::spawn(async move { initiator.run().await });
 
         Self { sender }
@@ -168,6 +211,18 @@ impl InitiatorHandle {
         let msg = InitiatorMsg::StartElection;
         let _ = self.sender.send(msg).await;
     }
+
+    pub async fn reset_voted_for(&self) {
+        let (send, recv) = oneshot::channel();
+        let msg = InitiatorMsg::ResetVotedFor { respond_to: send };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    pub async fn set_voted_for(&self, voted_for: u64) {
+        let msg = InitiatorMsg::SetVotedFor { voted_for };
+        let _ = self.sender.send(msg).await;
+    }
 }
 
 //exclude candidate (-> insert only number of other nodes)
@@ -189,20 +244,29 @@ mod tests {
     #[tokio::test]
     async fn get_voted_for_test() {
         let watchdog = WatchdogHandle::default();
-        let mut test_db_paths = get_test_db_paths(1).await;
+        let mut test_db_paths = get_test_db_paths(2).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = Config::new();
-        let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
+        let initiator =
+            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap()).await;
+        initiator.reset_voted_for().await;
+
         assert_eq!(initiator.get_voted_for().await, None);
+
+        initiator.set_voted_for(3).await;
+        initiator.set_voted_for(4).await;
+
+        assert_eq!(initiator.get_voted_for().await, Some(4))
     }
 
     #[tokio::test]
     async fn get_worker_test() {
         let watchdog = WatchdogHandle::default();
-        let mut test_db_paths = get_test_db_paths(1).await;
+        let mut test_db_paths = get_test_db_paths(2).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = Config::for_test().await;
-        let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
+        let initiator =
+            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap()).await;
 
         assert_eq!(
             initiator
@@ -219,12 +283,18 @@ mod tests {
     #[tokio::test]
     async fn start_election_test() {
         let watchdog = WatchdogHandle::default();
-        let mut test_db_paths = get_test_db_paths(1).await;
+        let mut test_db_paths = get_test_db_paths(2).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         term_store.reset_term().await;
 
         let config = Config::for_test().await;
-        let initiator = InitiatorHandle::new(term_store, watchdog.clone(), config.clone()).await;
+        let initiator = InitiatorHandle::new(
+            term_store,
+            watchdog.clone(),
+            config.clone(),
+            test_db_paths.pop().unwrap(),
+        )
+        .await;
         let counter = initiator.get_counter().await;
 
         let test_future = async {

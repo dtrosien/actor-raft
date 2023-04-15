@@ -63,7 +63,10 @@ impl TermStore {
             }
             TermMsg::CheckTerm { term } => self.check_term(term).await,
             TermMsg::Reset { respond_to } => {
-                let _ = respond_to.send(self.reset_term().await);
+                let _ = {
+                    self.reset_term().await;
+                    respond_to.send(())
+                };
             }
         }
     }
