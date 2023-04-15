@@ -16,3 +16,5 @@ pub async fn get_test_db_paths(amount: u16) -> Vec<String> {
     }
     paths
 }
+
+// todo unit tests may dead lock when to many dbs are initialized -> investigate
