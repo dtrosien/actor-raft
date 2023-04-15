@@ -19,11 +19,11 @@ pub struct Raft {
 }
 
 impl Raft {
-    pub fn build() -> Self {
+    pub async fn build() -> Self {
         let state_store = StateStoreHandle::new();
         let watchdog = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(watchdog.clone(), "databases/term_db".to_string());
-        let core = create_actors(watchdog.clone(), term_store.clone());
+        let core = create_actors(watchdog.clone(), term_store.clone()).await;
         Raft {
             state_store,
             watchdog,
@@ -52,14 +52,8 @@ impl Raft {
     }
 }
 
-fn create_actors(watchdog: WatchdogHandle, term_store: TermStoreHandle) -> CoreHandles {
-    let state_meta = StateMeta {
-        previous_log_index: 0, // todo why couldnt this be set to zero inside actor
-        previous_log_term: 0,  // todo why couldnt this be set to zero inside actor
-        term: 0,
-        leader_id: 0,
-        leader_commit: 0, // todo why couldnt this be set to zero inside actor
-    };
+async fn create_actors(watchdog: WatchdogHandle, term_store: TermStoreHandle) -> CoreHandles {
+    let state_meta = StateMeta::new(term_store.get_term().await); // todo check if this small meta init is possible
 
     CoreHandles::new(
         watchdog,

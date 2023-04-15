@@ -253,6 +253,18 @@ pub struct StateMeta {
     pub leader_commit: u64,
 }
 
+impl StateMeta {
+    pub fn new(term: u64) -> Self {
+        StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 0,
+            term,
+            leader_id: 0,
+            leader_commit: 0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
