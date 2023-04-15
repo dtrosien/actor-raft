@@ -156,10 +156,6 @@ impl Executor {
     }
 }
 
-async fn test() -> Result<(), Box<dyn Error + Send + Sync>> {
-    Ok(())
-}
-
 #[derive(Clone)]
 pub struct ExecutorHandle {
     sender: mpsc::Sender<ExecutorMsg>,

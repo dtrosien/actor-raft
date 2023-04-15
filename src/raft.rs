@@ -1,6 +1,14 @@
+use crate::actors::election::initiator::InitiatorHandle;
+use crate::actors::log::executor::{App, ExecutorHandle};
+use crate::actors::log::log_store::LogStoreHandle;
+use crate::actors::log::replication::replicator::ReplicatorHandle;
+use crate::actors::log::replication::worker::StateMeta;
+use crate::actors::log::test_utils::TestApp;
 use crate::actors::state_store::StateStoreHandle;
+use crate::actors::term_store::TermStoreHandle;
 use crate::actors::timer::TimerHandle;
 use crate::actors::watchdog::WatchdogHandle;
+use crate::config::Config;
 use std::time::Duration;
 
 pub struct Raft {
@@ -42,7 +50,20 @@ impl Raft {
 }
 
 fn create_actors(watchdog: WatchdogHandle) -> CoreHandles {
-    CoreHandles::new(watchdog)
+    let state_meta = StateMeta {
+        previous_log_index: 0,
+        previous_log_term: 0,
+        term: 0,
+        leader_id: 0,
+        leader_commit: 0,
+    };
+
+    CoreHandles::new(
+        watchdog,
+        Config::default(),
+        Box::new(TestApp {}),
+        state_meta,
+    )
     // match self.state {
     //     State::Leader => ApiStruct {  },
     //     State::Follower => ApiStruct {  },
@@ -53,13 +74,48 @@ fn create_actors(watchdog: WatchdogHandle) -> CoreHandles {
 #[derive(Clone)]
 pub struct CoreHandles {
     timer: TimerHandle,
+    term_store: TermStoreHandle,
+    // counter: CounterHandle, todo is initialized in Initiator, maybe better here?
+    initiator: InitiatorHandle,
+    log_store: LogStoreHandle,
+    executor: ExecutorHandle,
+    replicator: ReplicatorHandle,
 }
 
 impl CoreHandles {
-    fn new(watch_dog: WatchdogHandle) -> Self {
+    fn new(
+        watch_dog: WatchdogHandle,
+        config: Config,
+        app: Box<dyn App>,
+        state_meta: StateMeta,
+    ) -> Self {
         let timeout = Duration::from_millis(2);
-        let timer = TimerHandle::new(watch_dog, timeout);
-        Self { timer }
+        let timer = TimerHandle::new(watch_dog.clone(), timeout);
+        let term_store = TermStoreHandle::new(watch_dog.clone(), "databases/term_db".to_string());
+        let initiator = InitiatorHandle::new(
+            term_store.clone(),
+            watch_dog,
+            config.clone(),
+            "databases/vote_db".to_string(),
+        );
+        let log_store = LogStoreHandle::new("databases/log_db".to_string());
+        let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, app);
+        let replicator = ReplicatorHandle::new(
+            executor.clone(),
+            term_store.clone(),
+            log_store.clone(),
+            config,
+            state_meta,
+        );
+
+        Self {
+            timer,
+            term_store,
+            initiator,
+            log_store,
+            executor,
+            replicator,
+        }
     }
 
     pub async fn send_heartbeat(&self) {
@@ -71,4 +127,23 @@ impl CoreHandles {
     }
 
     pub fn request_vote_api(&self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test() {
+        let wd = WatchdogHandle::default();
+        let state_meta = StateMeta {
+            previous_log_index: 0, // todo why couldnt this be set to zero inside actor
+            previous_log_term: 0,  // todo why couldnt this be set to zero inside actor
+            term: 0,
+            leader_id: 0,
+            leader_commit: 0, // todo why couldnt this be set to zero inside actor
+        };
+
+        let core = CoreHandles::new(wd, Config::default(), Box::new(TestApp {}), state_meta);
+    }
 }

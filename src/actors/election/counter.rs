@@ -14,7 +14,7 @@ enum CounterMsg {
 }
 
 impl Counter {
-    async fn new(
+     fn new(
         receiver: mpsc::Receiver<CounterMsg>,
         watchdog: WatchdogHandle,
         votes_required: u64,
@@ -64,9 +64,9 @@ pub struct CounterHandle {
 }
 
 impl CounterHandle {
-    pub async fn new(watchdog: WatchdogHandle, votes_required: u64) -> Self {
+    pub fn new(watchdog: WatchdogHandle, votes_required: u64) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut counter = Counter::new(receiver, watchdog, votes_required).await;
+        let mut counter = Counter::new(receiver, watchdog, votes_required);
         tokio::spawn(async move { counter.run().await });
 
         Self { sender }
@@ -95,7 +95,7 @@ mod tests {
     async fn register_vote_test() {
         let watchdog = WatchdogHandle::default();
         let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required).await;
+        let counter = CounterHandle::new(watchdog, votes_required);
         let vote = Some(true);
 
         assert_eq!(counter.get_votes_received().await, 0);
@@ -107,7 +107,7 @@ mod tests {
     async fn election_won_test() {
         let watchdog = WatchdogHandle::default();
         let votes_required: u64 = 2;
-        let counter = CounterHandle::new(watchdog.clone(), votes_required).await;
+        let counter = CounterHandle::new(watchdog.clone(), votes_required);
         let vote = Some(true);
 
         // first vote -> no exit, since not enough votes

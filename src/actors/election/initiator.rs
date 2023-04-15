@@ -45,7 +45,7 @@ enum InitiatorMsg {
 }
 
 impl Initiator {
-    async fn new(
+    fn new(
         receiver: mpsc::Receiver<InitiatorMsg>,
         term: TermStoreHandle,
         watchdog: WatchdogHandle,
@@ -58,7 +58,7 @@ impl Initiator {
             .expect("vote_store db seems to be corrupted");
         let votes_required = calculate_required_votes(config.nodes.len() as u64);
         let id = config.id;
-        let counter = CounterHandle::new(watchdog, votes_required).await;
+        let counter = CounterHandle::new(watchdog, votes_required);
         let workers = config
             .nodes
             .into_iter()
@@ -167,14 +167,14 @@ pub struct InitiatorHandle {
 }
 
 impl InitiatorHandle {
-    pub async fn new(
+    pub fn new(
         term: TermStoreHandle,
         watchdog: WatchdogHandle,
         config: Config,
         db_path: String,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut initiator = Initiator::new(receiver, term, watchdog, config, db_path).await;
+        let mut initiator = Initiator::new(receiver, term, watchdog, config, db_path);
         tokio::spawn(async move { initiator.run().await });
 
         Self { sender }
@@ -248,7 +248,7 @@ mod tests {
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = Config::new();
         let initiator =
-            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap()).await;
+            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap());
         initiator.reset_voted_for().await;
 
         assert_eq!(initiator.get_voted_for().await, None);
@@ -266,7 +266,7 @@ mod tests {
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = Config::for_test().await;
         let initiator =
-            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap()).await;
+            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap());
 
         assert_eq!(
             initiator
@@ -293,8 +293,7 @@ mod tests {
             watchdog.clone(),
             config.clone(),
             test_db_paths.pop().unwrap(),
-        )
-        .await;
+        );
         let counter = initiator.get_counter().await;
 
         let test_future = async {

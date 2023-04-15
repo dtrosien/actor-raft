@@ -109,7 +109,7 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required).await;
+        let counter = CounterHandle::new(watchdog, votes_required);
         let node = Node {
             id: 0,
             ip: "".to_string(),
@@ -127,7 +127,7 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required).await;
+        let counter = CounterHandle::new(watchdog, votes_required);
         let port = get_test_port().await;
         let node = Node {
             id: 0,
