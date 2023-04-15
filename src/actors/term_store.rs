@@ -168,13 +168,14 @@ impl TermStoreHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::test_utils::get_test_db;
+    use crate::db::test_utils::get_test_db_paths;
 
     #[tokio::test]
     async fn get_term_test() {
         let watchdog = WatchdogHandle::default();
-        let db_path = get_test_db().await;
-        let term_store = TermStoreHandle::new(watchdog, db_path);
+        let mut test_db_paths = get_test_db_paths(1).await;
+
+        let term_store = TermStoreHandle::new(watchdog, test_db_paths.pop().unwrap());
         term_store.reset_term().await;
 
         assert_eq!(term_store.get_term().await, 0);
@@ -183,8 +184,9 @@ mod tests {
     #[tokio::test]
     async fn set_term_test() {
         let watchdog = WatchdogHandle::default();
-        let db_path = get_test_db().await;
-        let term_store = TermStoreHandle::new(watchdog, db_path);
+        let mut test_db_paths = get_test_db_paths(1).await;
+
+        let term_store = TermStoreHandle::new(watchdog, test_db_paths.pop().unwrap());
         term_store.reset_term().await;
 
         let new_term: u64 = 1;
@@ -195,8 +197,9 @@ mod tests {
     #[tokio::test]
     async fn check_term_and_reply_test() {
         let watchdog = WatchdogHandle::default();
-        let db_path = get_test_db().await;
-        let term_store = TermStoreHandle::new(watchdog, db_path);
+        let mut test_db_paths = get_test_db_paths(1).await;
+
+        let term_store = TermStoreHandle::new(watchdog, test_db_paths.pop().unwrap());
         term_store.reset_term().await;
 
         term_store.set_term(2).await;

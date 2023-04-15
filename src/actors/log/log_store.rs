@@ -314,13 +314,14 @@ impl LogStoreHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::test_utils::get_test_db;
+    use crate::db::test_utils::get_test_db_paths;
     use once_cell::sync::Lazy;
     use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn append_entry_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let entry1 = Entry {
             index: 1,
@@ -376,28 +377,32 @@ mod tests {
 
     #[tokio::test]
     async fn get_last_log_index_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         assert_eq!(log_store.get_last_log_index().await, 0);
     }
 
     #[tokio::test]
     async fn get_last_log_term_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         assert_eq!(log_store.get_last_log_term().await, 0);
     }
 
     #[tokio::test]
     async fn get_previous_log_index_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         assert_eq!(log_store.get_previous_log_index().await, 0);
     }
 
     #[tokio::test]
     async fn get_previous_log_term_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         assert_eq!(log_store.get_previous_log_term().await, 0);
     }

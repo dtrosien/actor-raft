@@ -284,11 +284,12 @@ fn calculate_required_replicas(num_worker: u64) -> u64 {
 mod tests {
     use super::*;
     use crate::actors::log::test_utils::TestApp;
-    use crate::db::test_utils::get_test_db;
+    use crate::db::test_utils::get_test_db_paths;
 
     #[tokio::test]
     async fn get_commit_index_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, 0, app);
 
@@ -297,7 +298,8 @@ mod tests {
 
     #[tokio::test]
     async fn commit_log_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, 0, app);
 
@@ -324,7 +326,8 @@ mod tests {
 
     #[tokio::test]
     async fn apply_log_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let entry1 = Entry {
             index: 1,
@@ -388,7 +391,8 @@ mod tests {
 
     #[tokio::test]
     async fn register_replication_success_test() {
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store.clone(), 0, app);

@@ -167,7 +167,7 @@ mod tests {
     use crate::actors::log::test_utils::TestApp;
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::db::test_utils::get_test_db;
+    use crate::db::test_utils::get_test_db_paths;
     use crate::rpc::test_utils::{start_test_server, TestServerFalse, TestServerTrue};
     use std::time::Duration;
     use tokio::sync::broadcast;
@@ -272,10 +272,13 @@ mod tests {
     ) {
         let wd = WatchdogHandle::default();
         let error_recv = wd.get_exit_receiver().await;
-        let term_store = TermStoreHandle::new(wd.clone(), get_test_db().await);
+
+        let mut test_db_paths = get_test_db_paths(2).await;
+
+        let term_store = TermStoreHandle::new(wd.clone(), test_db_paths.pop().unwrap());
         // term must be at least 1 since mock server replies 1
         term_store.increment_term().await;
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store.clone(), 1, app);

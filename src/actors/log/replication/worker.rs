@@ -258,7 +258,7 @@ mod tests {
     use super::*;
     use crate::actors::log::test_utils::TestApp;
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::db::test_utils::get_test_db;
+    use crate::db::test_utils::get_test_db_paths;
     use crate::rpc::test_utils::{
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
@@ -367,6 +367,7 @@ mod tests {
             };
             worker.add_to_replication_batch(entry.clone()).await;
             log_store.append_entry(entry.clone()).await;
+            tokio::time::sleep(Duration::from_millis(1)).await;
         }
 
         assert_eq!(worker.get_state_meta().await.previous_log_index, 0);
@@ -436,6 +437,7 @@ mod tests {
             };
             log_store.append_entry(entry.clone()).await;
             worker.add_to_replication_batch(entry).await;
+            tokio::time::sleep(Duration::from_millis(1)).await;
         }
 
         assert_eq!(worker.get_state_meta().await.previous_log_index, 10);
@@ -479,14 +481,16 @@ mod tests {
     ) {
         let wd = WatchdogHandle::default();
         let error_recv = wd.get_exit_receiver().await;
-        let term_store = TermStoreHandle::new(wd.clone(), get_test_db().await);
+        let mut test_db_paths = get_test_db_paths(2).await;
+
+        let term_store = TermStoreHandle::new(wd.clone(), test_db_paths.pop().unwrap());
         term_store.reset_term().await;
 
         // term must be at least 1 since mock server replies 1
         term_store.increment_term().await;
 
         let app = Box::new(TestApp {});
-        let log_store = LogStoreHandle::new(get_test_db().await);
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);
         // test server connection

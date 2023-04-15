@@ -182,15 +182,15 @@ fn calculate_required_votes(nodes_num: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::test_utils::get_test_db;
+    use crate::db::test_utils::get_test_db_paths;
     use crate::rpc::test_utils::{start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]
     async fn get_voted_for_test() {
         let watchdog = WatchdogHandle::default();
-        let db_path = get_test_db().await;
-        let term_store = TermStoreHandle::new(watchdog.clone(), db_path);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = Config::new();
         let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
         assert_eq!(initiator.get_voted_for().await, None);
@@ -199,8 +199,8 @@ mod tests {
     #[tokio::test]
     async fn get_worker_test() {
         let watchdog = WatchdogHandle::default();
-        let db_path = get_test_db().await;
-        let term_store = TermStoreHandle::new(watchdog.clone(), db_path);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = Config::for_test().await;
         let initiator = InitiatorHandle::new(term_store, watchdog, config).await;
 
@@ -219,8 +219,8 @@ mod tests {
     #[tokio::test]
     async fn start_election_test() {
         let watchdog = WatchdogHandle::default();
-        let db_path = get_test_db().await;
-        let term_store = TermStoreHandle::new(watchdog.clone(), db_path);
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         term_store.reset_term().await;
 
         let config = Config::for_test().await;
