@@ -112,6 +112,7 @@ impl Executor {
     }
 
     async fn commit_log(&mut self, entry: Entry) {
+        // todo leader commit should not be in entry because it might be wrong when reloaded from disc
         if entry.leader_commit > self.commit_index {
             self.commit_index = min(entry.leader_commit, entry.index);
         }

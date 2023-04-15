@@ -14,6 +14,7 @@ use std::time::Duration;
 pub struct Raft {
     state_store: StateStoreHandle,
     watchdog: WatchdogHandle,
+    term_store: TermStoreHandle,
     core: CoreHandles,
 }
 
@@ -21,10 +22,12 @@ impl Raft {
     pub fn build() -> Self {
         let state_store = StateStoreHandle::new();
         let watchdog = WatchdogHandle::new(state_store.clone());
-        let core = create_actors(watchdog.clone());
+        let term_store = TermStoreHandle::new(watchdog.clone(), "databases/term_db".to_string());
+        let core = create_actors(watchdog.clone(), term_store.clone());
         Raft {
             state_store,
             watchdog,
+            term_store,
             core,
         }
     }
@@ -49,19 +52,20 @@ impl Raft {
     }
 }
 
-fn create_actors(watchdog: WatchdogHandle) -> CoreHandles {
+fn create_actors(watchdog: WatchdogHandle, term_store: TermStoreHandle) -> CoreHandles {
     let state_meta = StateMeta {
-        previous_log_index: 0,
-        previous_log_term: 0,
+        previous_log_index: 0, // todo why couldnt this be set to zero inside actor
+        previous_log_term: 0,  // todo why couldnt this be set to zero inside actor
         term: 0,
         leader_id: 0,
-        leader_commit: 0,
+        leader_commit: 0, // todo why couldnt this be set to zero inside actor
     };
 
     CoreHandles::new(
         watchdog,
         Config::default(),
         Box::new(TestApp {}),
+        term_store,
         state_meta,
     )
     // match self.state {
@@ -87,11 +91,11 @@ impl CoreHandles {
         watch_dog: WatchdogHandle,
         config: Config,
         app: Box<dyn App>,
+        term_store: TermStoreHandle,
         state_meta: StateMeta,
     ) -> Self {
         let timeout = Duration::from_millis(2);
         let timer = TimerHandle::new(watch_dog.clone(), timeout);
-        let term_store = TermStoreHandle::new(watch_dog.clone(), "databases/term_db".to_string());
         let initiator = InitiatorHandle::new(
             term_store.clone(),
             watch_dog,
@@ -136,6 +140,7 @@ mod tests {
     #[tokio::test]
     async fn test() {
         let wd = WatchdogHandle::default();
+        let term_store = TermStoreHandle::new(wd.clone(), "databases/term_db".to_string());
         let state_meta = StateMeta {
             previous_log_index: 0, // todo why couldnt this be set to zero inside actor
             previous_log_term: 0,  // todo why couldnt this be set to zero inside actor
@@ -144,6 +149,12 @@ mod tests {
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
 
-        let core = CoreHandles::new(wd, Config::default(), Box::new(TestApp {}), state_meta);
+        let core = CoreHandles::new(
+            wd,
+            Config::default(),
+            Box::new(TestApp {}),
+            term_store,
+            state_meta,
+        );
     }
 }
