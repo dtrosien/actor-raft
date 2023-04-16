@@ -71,13 +71,14 @@ async fn create_actors(watchdog: WatchdogHandle, term_store: TermStoreHandle) ->
 
 #[derive(Clone)]
 pub struct CoreHandles {
-    timer: TimerHandle,
-    term_store: TermStoreHandle,
-    // counter: CounterHandle, todo is initialized in Initiator, maybe better here?
-    initiator: InitiatorHandle,
-    log_store: LogStoreHandle,
-    executor: ExecutorHandle,
-    replicator: ReplicatorHandle,
+    // todo make attributes private when it is clear which funcs aare needed in server
+    pub timer: TimerHandle,
+    pub term_store: TermStoreHandle,
+    // pub counter: CounterHandle, todo is initialized in Initiator, maybe better here?
+    pub initiator: InitiatorHandle,
+    pub log_store: LogStoreHandle,
+    pub executor: ExecutorHandle,
+    pub replicator: ReplicatorHandle,
 }
 
 impl CoreHandles {
