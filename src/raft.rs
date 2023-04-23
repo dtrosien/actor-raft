@@ -20,11 +20,17 @@ pub struct Raft {
 }
 
 impl Raft {
-    pub async fn build() -> Self {
+    pub async fn build(log_db_path: String, vote_db_path: String, term_db_path: String) -> Self {
         let state_store = StateStoreHandle::new();
         let watchdog = WatchdogHandle::new(state_store.clone());
-        let term_store = TermStoreHandle::new(watchdog.clone(), "databases/term_db".to_string());
-        let core = create_actors(watchdog.clone(), term_store.clone()).await;
+        let term_store = TermStoreHandle::new(watchdog.clone(), term_db_path);
+        let core = create_actors(
+            watchdog.clone(),
+            term_store.clone(),
+            log_db_path,
+            vote_db_path,
+        )
+        .await;
         Raft {
             state_store,
             watchdog,
@@ -53,7 +59,12 @@ impl Raft {
     }
 }
 
-async fn create_actors(watchdog: WatchdogHandle, term_store: TermStoreHandle) -> CoreHandles {
+async fn create_actors(
+    watchdog: WatchdogHandle,
+    term_store: TermStoreHandle,
+    log_db_path: String,
+    vote_db_path: String,
+) -> CoreHandles {
     let state_meta = StateMeta::new(term_store.get_term().await); // todo check if this small meta init is possible
 
     CoreHandles::new(
@@ -62,6 +73,8 @@ async fn create_actors(watchdog: WatchdogHandle, term_store: TermStoreHandle) ->
         Box::new(TestApp {}),
         term_store,
         state_meta,
+        log_db_path,
+        vote_db_path,
     )
     // match self.state {
     //     State::Leader => ApiStruct {  },
@@ -83,22 +96,20 @@ pub struct CoreHandles {
 }
 
 impl CoreHandles {
-    fn new(
+    pub fn new(
         watch_dog: WatchdogHandle,
         config: Config,
         app: Box<dyn App>,
         term_store: TermStoreHandle,
         state_meta: StateMeta,
+        log_db_path: String,
+        vote_db_path: String,
     ) -> Self {
         let timeout = Duration::from_millis(2);
         let timer = TimerHandle::new(watch_dog.clone(), timeout);
-        let initiator = InitiatorHandle::new(
-            term_store.clone(),
-            watch_dog,
-            config.clone(),
-            "databases/vote_db".to_string(),
-        );
-        let log_store = LogStoreHandle::new("databases/log_db".to_string());
+        let initiator =
+            InitiatorHandle::new(term_store.clone(), watch_dog, config.clone(), vote_db_path);
+        let log_store = LogStoreHandle::new(log_db_path);
         let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, app);
         let replicator = ReplicatorHandle::new(
             executor.clone(),
@@ -151,6 +162,8 @@ mod tests {
             Box::new(TestApp {}),
             term_store,
             state_meta,
+            "databases/log_db".to_string(),
+            "databases/vote_db".to_string(),
         );
     }
 }
