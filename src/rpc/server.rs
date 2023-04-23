@@ -35,19 +35,13 @@ impl RaftRpc for RaftServer {
         }
 
         // step 2
-        // todo this step in log_store? check first prevs in memory before reading from disk + refactor
-        match self
+        if !self
             .core
             .log_store
-            .read_entry(rpc_arguments.prev_log_index)
+            .previous_entry_match(rpc_arguments.prev_log_index, rpc_arguments.prev_log_term)
             .await
         {
-            None => return deny_append_request(current_term),
-            Some(prev_entry) => {
-                if prev_entry.term != rpc_arguments.prev_log_term {
-                    return deny_append_request(current_term);
-                }
-            }
+            return deny_append_request(current_term);
         }
 
         // step 3 & 4
@@ -121,4 +115,13 @@ fn deny_vote_request(term: u64) -> Result<Response<RequestVoteReply>, Status> {
         vote_granted: false,
     };
     Ok(Response::new(reply))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::get_test_db_paths;
+
+    #[tokio::test]
+    async fn append_entry_test() {}
 }

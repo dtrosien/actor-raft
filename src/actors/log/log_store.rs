@@ -2,6 +2,7 @@ use crate::db::raft_db::RaftDb;
 use crate::raft_rpc::append_entries_request::Entry;
 use std::collections::VecDeque;
 use std::error::Error;
+use tokio::fs::read_to_string;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]
@@ -9,8 +10,8 @@ struct LogStore {
     receiver: mpsc::Receiver<LogStoreMsg>,
     last_log_index: u64,
     last_log_term: u64,
-    previous_log_index: u64,
-    previous_log_term: u64,
+    previous_log_index: u64, // todo remove since not necessary -> only confusing with last log entry
+    previous_log_term: u64, // todo remove since not necessary -> only confusing with last log entry
     db: RaftDb,
 }
 
@@ -49,6 +50,11 @@ enum LogStoreMsg {
     },
     ResetLog {
         respond_to: oneshot::Sender<()>,
+    },
+    PrevEntryMatch {
+        respond_to: oneshot::Sender<bool>,
+        index: u64,
+        term: u64,
     },
 }
 
@@ -110,6 +116,13 @@ impl LogStore {
             }
             LogStoreMsg::ResetLog { respond_to } => {
                 let _ = respond_to.send(self.reset_log().await);
+            }
+            LogStoreMsg::PrevEntryMatch {
+                respond_to,
+                index,
+                term,
+            } => {
+                let _ = respond_to.send(self.prev_entry_match(index, term).await);
             }
         }
     }
@@ -213,6 +226,18 @@ impl LogStore {
         self.last_log_index = 0;
         //todo trigger executor to reset commit?
     }
+
+    // this method covers step 2 of the append entries rpc receiver implementation of the raft paper
+    #[tracing::instrument(ret, level = "debug")]
+    async fn prev_entry_match(&mut self, index: u64, term: u64) -> bool {
+        if (index == self.last_log_index) && (term == self.last_log_term) {
+            return true;
+        };
+        match self.read_entry(index).await {
+            None => false,
+            Some(prev_entry) => prev_entry.term == term,
+        }
+    }
 }
 
 #[tracing::instrument(ret, level = "debug")]
@@ -294,6 +319,18 @@ impl LogStoreHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
+    pub async fn previous_entry_match(&self, index: u64, term: u64) -> bool {
+        let (send, recv) = oneshot::channel();
+        let msg = LogStoreMsg::PrevEntryMatch {
+            respond_to: send,
+            index,
+            term,
+        };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn reset_log(&self) {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::ResetLog { respond_to: send };
@@ -338,8 +375,6 @@ impl LogStoreHandle {
 mod tests {
     use super::*;
     use crate::db::test_utils::get_test_db_paths;
-    use once_cell::sync::Lazy;
-    use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn append_entry_test() {
@@ -424,5 +459,38 @@ mod tests {
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         assert_eq!(log_store.get_previous_log_term().await, 0);
+    }
+
+    #[tokio::test]
+    async fn get_previous_entry_match_test() {
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
+        log_store.reset_log().await;
+
+        assert!(log_store.previous_entry_match(0, 0).await);
+        assert!(!log_store.previous_entry_match(1, 0).await);
+
+        let entry1 = Entry {
+            index: 1,
+            term: 1,
+            payload: "some payload".to_string(),
+        };
+
+        log_store.append_entry(entry1).await;
+
+        assert!(log_store.previous_entry_match(1, 1).await);
+
+        let entry2 = Entry {
+            index: 2,
+            term: 1,
+            payload: "some payload".to_string(),
+        };
+        log_store.append_entry(entry2).await;
+
+        // check succeeds since both log store attributes term and index matches
+        assert!(log_store.previous_entry_match(2, 1).await);
+
+        // this check also succeed since now the entry from DB is read which matches index and term
+        assert!(log_store.previous_entry_match(1, 1).await);
     }
 }
