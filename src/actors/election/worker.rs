@@ -6,6 +6,7 @@ use crate::rpc;
 
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct Worker {
     receiver: mpsc::Receiver<WorkerMsg>,
     term_store: TermStoreHandle,
@@ -13,6 +14,7 @@ struct Worker {
     node: Node,
 }
 
+#[derive(Debug)]
 enum WorkerMsg {
     RequestVote { request: RequestVoteRequest },
     GetNode { respond_to: oneshot::Sender<Node> },
@@ -67,7 +69,7 @@ impl Worker {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WorkerHandle {
     sender: mpsc::Sender<WorkerMsg>,
 }

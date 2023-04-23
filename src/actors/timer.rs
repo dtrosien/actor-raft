@@ -2,6 +2,7 @@ use crate::actors::watchdog::WatchdogHandle;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+#[derive(Debug)]
 struct Timer {
     receiver: mpsc::Receiver<TimerMsg>,
     watchdog: WatchdogHandle,
@@ -50,7 +51,7 @@ impl Timer {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TimerHandle {
     sender: mpsc::Sender<TimerMsg>,
 }

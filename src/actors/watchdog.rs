@@ -1,6 +1,7 @@
 use crate::actors::state_store::{ServerState, StateStoreHandle};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
+#[derive(Debug)]
 struct Watchdog {
     receiver: mpsc::Receiver<WatchdogMsg>,
     exit_sender: broadcast::Sender<()>,
@@ -60,7 +61,7 @@ impl Watchdog {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WatchdogHandle {
     sender: mpsc::Sender<WatchdogMsg>,
 }

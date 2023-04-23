@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct Worker {
     receiver: mpsc::Receiver<WorkerMsg>,
     term_store: TermStoreHandle,
@@ -21,6 +22,7 @@ struct Worker {
     entries_cache: VecDeque<Entry>,
 }
 
+#[derive(Debug)]
 enum WorkerMsg {
     GetNode {
         respond_to: oneshot::Sender<Node>,
@@ -184,7 +186,7 @@ impl Worker {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WorkerHandle {
     sender: mpsc::Sender<WorkerMsg>,
 }
@@ -244,7 +246,7 @@ impl WorkerHandle {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StateMeta {
     pub previous_log_index: u64,
     pub previous_log_term: u64,

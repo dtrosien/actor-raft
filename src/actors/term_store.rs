@@ -3,6 +3,7 @@ use crate::db::raft_db::RaftDb;
 use std::cmp::Ordering;
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct TermStore {
     receiver: mpsc::Receiver<TermMsg>,
     watchdog: WatchdogHandle,
@@ -10,6 +11,7 @@ struct TermStore {
     current_term: u64,
 }
 
+#[derive(Debug)]
 enum TermMsg {
     Get {
         respond_to: oneshot::Sender<u64>,
@@ -113,7 +115,7 @@ impl TermStore {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TermStoreHandle {
     sender: mpsc::Sender<TermMsg>,
 }
