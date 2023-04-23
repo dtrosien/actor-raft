@@ -5,12 +5,14 @@ use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
 use std::error::Error;
+use std::fmt::Debug;
 use tokio::sync::{mpsc, oneshot};
 
-pub trait App: Send + Sync {
+pub trait App: Send + Sync + Debug {
     fn run(&self, entry: Entry) -> Result<bool, Box<dyn Error + Send + Sync>>;
 }
 
+#[derive(Debug)]
 struct Executor {
     receiver: mpsc::Receiver<ExecutorMsg>,
     commit_index: u64,
@@ -22,6 +24,7 @@ struct Executor {
     app: Box<dyn App>,
 }
 
+#[derive(Debug)]
 enum ExecutorMsg {
     RegisterWorker {
         worker_id: u64,
@@ -82,6 +85,7 @@ impl Executor {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: ExecutorMsg) {
         match msg {
             ExecutorMsg::CommitLog { entry } => self.commit_log(entry).await,
@@ -111,6 +115,7 @@ impl Executor {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn commit_log(&mut self, entry: Entry) {
         // todo leader commit should not be in entry because it might be wrong when reloaded from disc
         if entry.leader_commit > self.commit_index {
@@ -118,6 +123,7 @@ impl Executor {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn apply_log(&mut self) -> Result<bool, Box<dyn Error + Send + Sync>> {
         let mut reply = false;
         while self.last_applied < self.commit_index {
@@ -130,6 +136,7 @@ impl Executor {
         Ok(reply)
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn register_worker(&mut self, worker_id: u64) {
         if let Vacant(_) = self.match_index.entry(worker_id) {
             self.num_workers += 1;
@@ -138,6 +145,7 @@ impl Executor {
     }
 
     // used in leader state (see last paragraph for leader in raft paper)
+    #[tracing::instrument(ret, level = "debug")]
     async fn register_replication_success(&mut self, worker_id: u64, index: u64) -> u64 {
         if let Occupied(mut entry) = self.match_index.entry(worker_id) {
             entry.insert(index);
@@ -157,7 +165,7 @@ impl Executor {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExecutorHandle {
     sender: mpsc::Sender<ExecutorMsg>,
 }
@@ -171,11 +179,13 @@ impl ExecutorHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn commit_log(&self, entry: Entry) {
         let msg = ExecutorMsg::CommitLog { entry };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn apply_log(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::ApplyLog { respond_to: send };
@@ -183,12 +193,14 @@ impl ExecutorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn register_worker(&self, worker_id: u64) {
         let msg = ExecutorMsg::RegisterWorker { worker_id };
         let _ = self.sender.send(msg).await;
     }
 
     //reply last commit
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn register_replication_success(&self, worker_id: u64, index: u64) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::RegisterReplSuccess {
@@ -200,6 +212,7 @@ impl ExecutorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_commit_index(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::GetCommitIndex { respond_to: send };
@@ -208,16 +221,19 @@ impl ExecutorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn set_commit_index(&self, index: u64) {
         let msg = ExecutorMsg::SetCommitIndex { index };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn set_last_applied(&self, index: u64) {
         let msg = ExecutorMsg::SetLastApplied { index };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_last_applied(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::GetLastApplied { respond_to: send };
@@ -226,11 +242,13 @@ impl ExecutorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn set_num_workers(&self, num: u64) {
         let msg = ExecutorMsg::SetNumWorkers { num };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_num_workers(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::GetNumWorkers { respond_to: send };
@@ -240,6 +258,7 @@ impl ExecutorHandle {
     }
 }
 
+#[tracing::instrument(ret, level = "debug")]
 fn new_commit_index(
     match_index: &mut HashMap<u64, u64>,
     last_commit_index: u64,
@@ -269,6 +288,7 @@ fn new_commit_index(
 }
 
 //exclude leader (-> insert only number of other nodes)
+#[tracing::instrument(ret, level = "debug")]
 fn calculate_required_replicas(num_worker: u64) -> u64 {
     if num_worker % 2 == 0 {
         num_worker / 2
@@ -283,6 +303,7 @@ mod tests {
     use crate::actors::log::test_utils::TestApp;
     use crate::db::test_utils::get_test_db_paths;
 
+    #[tracing_test::traced_test]
     #[tokio::test]
     async fn get_commit_index_test() {
         let mut test_db_paths = get_test_db_paths(1).await;
