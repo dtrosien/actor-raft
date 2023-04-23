@@ -16,7 +16,8 @@ enum CounterMsg {
 }
 
 impl Counter {
-     fn new(
+    #[tracing::instrument(ret, level = "debug")]
+    fn new(
         receiver: mpsc::Receiver<CounterMsg>,
         watchdog: WatchdogHandle,
         votes_required: u64,
@@ -35,6 +36,7 @@ impl Counter {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: CounterMsg) {
         match msg {
             CounterMsg::RegisterVote { vote } => self.register_vote(vote).await,
@@ -44,6 +46,7 @@ impl Counter {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn register_vote(&mut self, vote: Option<bool>) {
         if let Some(vote) = vote {
             if vote {
@@ -53,6 +56,7 @@ impl Counter {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn check_if_won(&self) {
         if self.votes_received.ge(&self.votes_required) {
             self.watchdog.election_won().await;
@@ -66,6 +70,7 @@ pub struct CounterHandle {
 }
 
 impl CounterHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(watchdog: WatchdogHandle, votes_required: u64) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut counter = Counter::new(receiver, watchdog, votes_required);
@@ -74,11 +79,13 @@ impl CounterHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn register_vote(&self, vote: Option<bool>) {
         let msg = CounterMsg::RegisterVote { vote };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_votes_received(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = CounterMsg::GetVotesReceived { respond_to: send };

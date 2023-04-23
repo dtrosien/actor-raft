@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct LogStore {
     receiver: mpsc::Receiver<LogStoreMsg>,
     last_log_index: u64,
@@ -13,6 +14,7 @@ struct LogStore {
     db: RaftDb,
 }
 
+#[derive(Debug)]
 enum LogStoreMsg {
     GetLastLogIndex {
         respond_to: oneshot::Sender<u64>,
@@ -51,6 +53,7 @@ enum LogStoreMsg {
 }
 
 impl LogStore {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(receiver: mpsc::Receiver<LogStoreMsg>, db_path: String) -> Self {
         let db = RaftDb::new(db_path);
         let (last_log_index, last_log_term) = unwrap_index_and_term(db.read_last_entry());
@@ -72,6 +75,7 @@ impl LogStore {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: LogStoreMsg) {
         match msg {
             LogStoreMsg::GetLastLogIndex { respond_to } => {
@@ -111,6 +115,7 @@ impl LogStore {
     }
 
     //todo change return to Vec<option<u64>> like with singe entry
+    #[tracing::instrument(ret, level = "debug")]
     async fn append_entries_and_flush(
         &mut self,
         entries: VecDeque<Entry>,
@@ -123,6 +128,7 @@ impl LogStore {
         reply
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn append_entry_and_flush(&mut self, entry: Entry) -> Option<u64> {
         let index = self.append_entry(entry).await;
         self.db.flush_entries().await.expect("Database corrupted");
@@ -130,6 +136,7 @@ impl LogStore {
     }
 
     // covers step 3. and 4. of the append entries rpc in the raft paper
+    #[tracing::instrument(ret, level = "debug")]
     async fn append_entry(&mut self, entry: Entry) -> Option<u64> {
         let entry_term = entry.term;
         let entry_index = entry.index;
@@ -170,6 +177,7 @@ impl LogStore {
         //todo send updated last log meta to election initiator or initiator reads the values?
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn read_last_entry(&self) -> Option<Entry> {
         match self.db.read_last_entry() {
             Ok(option) => option,
@@ -177,6 +185,7 @@ impl LogStore {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn read_entry(&self, index: u64) -> Option<Entry> {
         match self.db.read_entry(index) {
             Ok(option) => option,
@@ -184,6 +193,7 @@ impl LogStore {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn read_previous_entry(&self, index: u64) -> Option<Entry> {
         match self.db.read_previous_entry(index) {
             Ok(option) => option,
@@ -191,6 +201,7 @@ impl LogStore {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn reset_log(&mut self) {
         self.db
             .clear_db()
@@ -204,6 +215,7 @@ impl LogStore {
     }
 }
 
+#[tracing::instrument(ret, level = "debug")]
 fn unwrap_index_and_term(
     wrapped_entry: Result<Option<Entry>, Box<dyn Error + Send + Sync>>,
 ) -> (u64, u64) {
@@ -220,6 +232,7 @@ pub struct LogStoreHandle {
 }
 
 impl LogStoreHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(db_path: String) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = LogStore::new(receiver, db_path);
@@ -228,6 +241,7 @@ impl LogStoreHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn append_entry(&self, entry: Entry) -> Option<u64> {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::AppendEntry {
@@ -238,6 +252,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn append_entries(&self, entries: VecDeque<Entry>) -> VecDeque<Option<u64>> {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::AppendEntries {
@@ -248,6 +263,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn read_last_entry(&self) -> Option<Entry> {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::ReadLastEntry { respond_to: send };
@@ -255,6 +271,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn read_entry(&self, index: u64) -> Option<Entry> {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::ReadEntry {
@@ -265,6 +282,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn read_previous_entry(&self, index: u64) -> Option<Entry> {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::ReadPreviousEntry {
@@ -275,6 +293,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn reset_log(&self) {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::ResetLog { respond_to: send };
@@ -282,6 +301,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_last_log_index(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::GetLastLogIndex { respond_to: send };
@@ -289,6 +309,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_last_log_term(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::GetLastLogTerm { respond_to: send };
@@ -296,6 +317,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_previous_log_index(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::GetPreviousLogIndex { respond_to: send };
@@ -303,6 +325,7 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_previous_log_term(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = LogStoreMsg::GetPreviousLogTerm { respond_to: send };

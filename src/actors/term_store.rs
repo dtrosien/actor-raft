@@ -33,6 +33,7 @@ enum TermMsg {
 }
 
 impl TermStore {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(receiver: mpsc::Receiver<TermMsg>, watchdog: WatchdogHandle, path: String) -> Self {
         let db = RaftDb::new(path);
         let current_term = db
@@ -53,6 +54,7 @@ impl TermStore {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: TermMsg) {
         match msg {
             TermMsg::Get { respond_to } => {
@@ -73,12 +75,14 @@ impl TermStore {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn check_term(&self, term: u64) {
         if term.cmp(&self.current_term) == Ordering::Greater {
             self.watchdog.term_error().await;
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn check_term_and_reply(&self, term: u64) -> Option<bool> {
         match term.cmp(&self.current_term) {
             Ordering::Less => Some(false),
@@ -90,6 +94,7 @@ impl TermStore {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn increment_term(&mut self) {
         self.current_term += 1;
         self.db
@@ -98,6 +103,7 @@ impl TermStore {
             .expect("term_store db seems to be corrupted");
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn set_term(&mut self, term: u64) {
         self.current_term = term;
         self.db
@@ -106,6 +112,7 @@ impl TermStore {
             .expect("term_store db seems to be corrupted");
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn reset_term(&mut self) {
         self.current_term = 0;
         self.db
@@ -121,6 +128,7 @@ pub struct TermStoreHandle {
 }
 
 impl TermStoreHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(watchdog: WatchdogHandle, path: String) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut term_store = TermStore::new(receiver, watchdog, path);
@@ -129,6 +137,7 @@ impl TermStoreHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_term(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = TermMsg::Get { respond_to: send };
@@ -137,11 +146,13 @@ impl TermStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn set_term(&self, term: u64) {
         let msg = TermMsg::Set { term };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn check_term_and_reply(&self, term: u64) -> Option<bool> {
         let (send, recv) = oneshot::channel();
         let msg = TermMsg::CheckTermAndReply {
@@ -152,16 +163,19 @@ impl TermStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn check_term(&self, term: u64) {
         let msg = TermMsg::CheckTerm { term };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn increment_term(&self) {
         let msg = TermMsg::Increment;
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn reset_term(&self) {
         let (send, recv) = oneshot::channel();
         let msg = TermMsg::Reset { respond_to: send };

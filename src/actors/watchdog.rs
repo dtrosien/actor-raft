@@ -22,6 +22,7 @@ enum WatchdogMsg {
 }
 
 impl Watchdog {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(receiver: mpsc::Receiver<WatchdogMsg>, state_store: StateStoreHandle) -> Self {
         let (exit_sender, _) = broadcast::channel(8);
         Watchdog {
@@ -37,6 +38,7 @@ impl Watchdog {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: WatchdogMsg) {
         match msg {
             WatchdogMsg::GetExitReceiver { respond_to } => {
@@ -67,6 +69,7 @@ pub struct WatchdogHandle {
 }
 
 impl WatchdogHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(state_store: StateStoreHandle) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut watchdog = Watchdog::new(receiver, state_store);
@@ -76,6 +79,7 @@ impl WatchdogHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_exit_receiver(&self) -> broadcast::Receiver<()> {
         let (send, recv) = oneshot::channel();
         let msg = WatchdogMsg::GetExitReceiver { respond_to: send };
@@ -84,6 +88,7 @@ impl WatchdogHandle {
         recv.await.expect("watchdog task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn timeout(&self) {
         println!("Watchdog got timeout signal");
         let msg = WatchdogMsg::Timeout;
@@ -93,6 +98,7 @@ impl WatchdogHandle {
             .expect("watchdog task has been killed");
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn term_error(&self) {
         println!("Watchdog got term error signal");
         let msg = WatchdogMsg::TermError;
@@ -102,6 +108,7 @@ impl WatchdogHandle {
             .expect("watchdog task has been killed");
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn election_won(&self) {
         println!("Watchdog got election won signal");
         let msg = WatchdogMsg::ElectionWon;
@@ -111,6 +118,7 @@ impl WatchdogHandle {
             .expect("watchdog task has been killed");
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_state_store_handle(&self) -> StateStoreHandle {
         let (send, recv) = oneshot::channel();
         let msg = WatchdogMsg::GetStateStoreHandle { respond_to: send };

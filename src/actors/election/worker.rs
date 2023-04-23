@@ -21,6 +21,7 @@ enum WorkerMsg {
 }
 
 impl Worker {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(
         receiver: mpsc::Receiver<WorkerMsg>,
         term: TermStoreHandle,
@@ -41,6 +42,7 @@ impl Worker {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: WorkerMsg) {
         match msg {
             WorkerMsg::RequestVote { request } => {
@@ -53,6 +55,7 @@ impl Worker {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn request_vote(&self, request: RequestVoteRequest) -> Option<bool> {
         let ip = self.node.ip.clone();
         let port = self.node.port;
@@ -75,6 +78,7 @@ pub struct WorkerHandle {
 }
 
 impl WorkerHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(term_store: TermStoreHandle, counter: CounterHandle, node: Node) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut worker = Worker::new(receiver, term_store, counter, node);
@@ -83,6 +87,7 @@ impl WorkerHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_node(&self) -> Node {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetNode { respond_to: send };
@@ -91,6 +96,7 @@ impl WorkerHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn request_vote(&self, request: RequestVoteRequest) {
         let msg = WorkerMsg::RequestVote { request };
         let _ = self.sender.send(msg).await;

@@ -61,6 +61,7 @@ enum ExecutorMsg {
 }
 
 impl Executor {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(
         receiver: mpsc::Receiver<ExecutorMsg>,
         log_store: LogStoreHandle,
@@ -171,6 +172,7 @@ pub struct ExecutorHandle {
 }
 
 impl ExecutorHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(log_store: LogStoreHandle, current_term: u64, app: Box<dyn App>) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Executor::new(receiver, log_store, current_term, app);
@@ -303,7 +305,7 @@ mod tests {
     use crate::actors::log::test_utils::TestApp;
     use crate::db::test_utils::get_test_db_paths;
 
-    #[tracing_test::traced_test]
+    // #[tracing_test::traced_test]
     #[tokio::test]
     async fn get_commit_index_test() {
         let mut test_db_paths = get_test_db_paths(1).await;

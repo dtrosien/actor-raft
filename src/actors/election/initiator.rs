@@ -47,6 +47,7 @@ enum InitiatorMsg {
 }
 
 impl Initiator {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(
         receiver: mpsc::Receiver<InitiatorMsg>,
         term: TermStoreHandle,
@@ -90,6 +91,7 @@ impl Initiator {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: InitiatorMsg) {
         match msg {
             InitiatorMsg::GetVotedFor { respond_to } => {
@@ -117,6 +119,7 @@ impl Initiator {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn start_election(&mut self) {
         //increment current term
         self.term_store.increment_term().await;
@@ -137,15 +140,18 @@ impl Initiator {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     fn set_last_log_meta(&mut self, last_log_index: u64, last_log_term: u64) {
         self.last_log_index = last_log_index;
         self.last_log_term = last_log_term;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     fn get_worker(&self, id: u64) -> Option<WorkerHandle> {
         self.workers.get(&id).cloned()
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn reset_voted_for(&mut self) {
         self.voted_for = None;
         self.db
@@ -154,6 +160,7 @@ impl Initiator {
             .expect("vote_store db seems to be corrupted, delete manually")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn set_voted_for(&mut self, voted_for: u64) {
         self.voted_for = Some(voted_for);
         self.db
@@ -169,6 +176,7 @@ pub struct InitiatorHandle {
 }
 
 impl InitiatorHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(
         term: TermStoreHandle,
         watchdog: WatchdogHandle,
@@ -182,6 +190,7 @@ impl InitiatorHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_voted_for(&self) -> Option<u64> {
         let (send, recv) = oneshot::channel();
         let msg = InitiatorMsg::GetVotedFor { respond_to: send };
@@ -190,6 +199,7 @@ impl InitiatorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn get_worker(&self, id: u64) -> Option<WorkerHandle> {
         let (send, recv) = oneshot::channel();
         let msg = InitiatorMsg::GetWorker {
@@ -201,6 +211,7 @@ impl InitiatorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn get_counter(&self) -> CounterHandle {
         let (send, recv) = oneshot::channel();
         let msg = InitiatorMsg::GetCounter { respond_to: send };
@@ -209,11 +220,13 @@ impl InitiatorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn start_election(&self) {
         let msg = InitiatorMsg::StartElection;
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn reset_voted_for(&self) {
         let (send, recv) = oneshot::channel();
         let msg = InitiatorMsg::ResetVotedFor { respond_to: send };
@@ -221,6 +234,7 @@ impl InitiatorHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn set_voted_for(&self, voted_for: u64) {
         let msg = InitiatorMsg::SetVotedFor { voted_for };
         let _ = self.sender.send(msg).await;
@@ -228,6 +242,7 @@ impl InitiatorHandle {
 }
 
 //exclude candidate (-> insert only number of other nodes)
+#[tracing::instrument(ret, level = "debug")]
 fn calculate_required_votes(nodes_num: u64) -> u64 {
     if nodes_num % 2 == 0 {
         nodes_num / 2

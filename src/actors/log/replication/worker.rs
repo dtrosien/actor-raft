@@ -43,6 +43,7 @@ enum WorkerMsg {
 }
 
 impl Worker {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(
         receiver: mpsc::Receiver<WorkerMsg>,
         term_store: TermStoreHandle,
@@ -72,6 +73,7 @@ impl Worker {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: WorkerMsg) {
         match msg {
             WorkerMsg::GetNode { respond_to } => {
@@ -91,6 +93,7 @@ impl Worker {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn replicate_entry(&mut self, entry: Entry) {
         self.add_to_replication_batch(entry).await;
         self.flush_replication_batch().await;
@@ -100,6 +103,7 @@ impl Worker {
     // are not needed here. among other things because of the event based triggering by passing
     // entries to the worker and keeping them in the cache. maybe a last index has to be
     // created in case the cache is cleared
+    #[tracing::instrument(ret, level = "debug")]
     async fn send_append_request(
         &mut self,
         request: AppendEntriesRequest,
@@ -130,6 +134,7 @@ impl Worker {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn append_previous_entry_to_log_cache(&mut self) {
         // read previous entry from db
         if let Some(previous_entry) = self
@@ -151,10 +156,12 @@ impl Worker {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn add_to_replication_batch(&mut self, entry: Entry) {
         self.entries_cache.push_front(entry);
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn flush_replication_batch(&mut self) {
         let request = self.build_append_request().await;
 
@@ -174,6 +181,7 @@ impl Worker {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn build_append_request(&self) -> AppendEntriesRequest {
         AppendEntriesRequest {
             term: self.state_meta.term,
@@ -192,6 +200,7 @@ pub struct WorkerHandle {
 }
 
 impl WorkerHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
@@ -206,6 +215,7 @@ impl WorkerHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_node(&self) -> Node {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetNode { respond_to: send };
@@ -214,6 +224,7 @@ impl WorkerHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn get_state_meta(&self) -> StateMeta {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetStateMeta { respond_to: send };
@@ -222,6 +233,7 @@ impl WorkerHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn get_cached_entries(&self) -> VecDeque<Entry> {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetCachedEntries { respond_to: send };
@@ -230,16 +242,19 @@ impl WorkerHandle {
         recv.await.expect("Actor task has been killed")
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn replicate_entry(&self, entry: Entry) {
         let msg = WorkerMsg::ReplicateEntry { entry };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn add_to_replication_batch(&self, entry: Entry) {
         let msg = WorkerMsg::AddToReplicationBatch { entry };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn flush_replication_batch(&self) {
         let msg = WorkerMsg::FlushReplicationBatch;
         let _ = self.sender.send(msg).await;

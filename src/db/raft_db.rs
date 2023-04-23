@@ -8,12 +8,14 @@ pub struct RaftDb {
 }
 
 impl RaftDb {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(db_path: String) -> Self {
         RaftDb {
             db: sled::open(db_path).expect("could not open log-db"),
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn store_current_term(
         &self,
         current_term: u64,
@@ -24,6 +26,7 @@ impl RaftDb {
         Ok(())
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub fn read_current_term(&self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.get(b"current_term")? {
             Some(current_term) => {
@@ -34,6 +37,7 @@ impl RaftDb {
         })
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn store_voted_for(
         &self,
         voted_for: u64,
@@ -43,6 +47,7 @@ impl RaftDb {
         Ok(())
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub fn read_voted_for(&self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.get(b"voted_for")? {
             Some(voted_for) => {
@@ -53,6 +58,7 @@ impl RaftDb {
         })
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn store_entry_and_flush(
         &self,
         entry: Entry,
@@ -68,6 +74,7 @@ impl RaftDb {
         Ok(old_entry)
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn store_entry(
         &self,
         entry: Entry,
@@ -82,6 +89,7 @@ impl RaftDb {
         Ok(old_entry)
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn store_entries(
         &self,
         entries: Vec<Entry>,
@@ -96,6 +104,7 @@ impl RaftDb {
         Ok(())
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub fn read_entry(&self, index: u64) -> Result<Option<Entry>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.get(index.to_ne_bytes())? {
             Some(b_entry) => {
@@ -105,6 +114,8 @@ impl RaftDb {
             None => None,
         })
     }
+
+    #[tracing::instrument(ret, level = "debug")]
     pub fn read_last_entry(&self) -> Result<Option<Entry>, Box<dyn Error + Send + Sync>> {
         Ok(match self.db.last()? {
             Some(b_entry) => {
@@ -115,6 +126,7 @@ impl RaftDb {
         })
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub fn read_previous_entry(
         &self,
         index: u64,
@@ -128,12 +140,14 @@ impl RaftDb {
         })
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn delete_entry(&self, index: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.db.remove(index.to_ne_bytes())?;
         self.db.flush_async().await?;
         Ok(())
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn delete_entries(
         &self,
         first_index: u64,
@@ -150,12 +164,14 @@ impl RaftDb {
         Ok(())
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn clear_db(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.db.clear()?;
         self.db.flush_async().await?;
         Ok(())
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn flush_entries(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.db.flush_async().await?;
         Ok(())

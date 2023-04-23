@@ -12,6 +12,7 @@ enum ActorMsg {
 }
 
 impl Actor {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(receiver: mpsc::Receiver<ActorMsg>) -> Self {
         Actor { receiver, id: 1 }
     }
@@ -22,6 +23,7 @@ impl Actor {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     fn handle_message(&mut self, msg: ActorMsg) {
         match msg {
             ActorMsg::GetId { respond_to } => {
@@ -41,6 +43,7 @@ pub struct ActorHandle {
 }
 
 impl ActorHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Actor::new(receiver);
@@ -49,6 +52,7 @@ impl ActorHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_id(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ActorMsg::GetId { respond_to: send };

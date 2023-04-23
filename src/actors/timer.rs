@@ -15,6 +15,7 @@ enum TimerMsg {
 }
 
 impl Timer {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(
         receiver: mpsc::Receiver<TimerMsg>,
         watchdog: WatchdogHandle,
@@ -42,6 +43,7 @@ impl Timer {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     fn handle_message(&mut self, msg: TimerMsg) {
         match msg {
             TimerMsg::Heartbeat => {
@@ -57,6 +59,7 @@ pub struct TimerHandle {
 }
 
 impl TimerHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(watchdog: WatchdogHandle, timeout: Duration) -> Self {
         let (sender, receiver) = mpsc::channel(1);
         let mut timer = Timer::new(receiver, watchdog, timeout);
@@ -66,6 +69,7 @@ impl TimerHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn send_heartbeat(&self) {
         let msg = TimerMsg::Heartbeat;
         let _ = self.sender.send(msg).await;

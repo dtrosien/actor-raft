@@ -27,6 +27,7 @@ enum ReplicatorMsg {
 }
 
 impl Replicator {
+    #[tracing::instrument(ret, level = "debug")]
     fn new(
         //todo check if it is better to get init values from Handles and make new() async
         receiver: mpsc::Receiver<ReplicatorMsg>,
@@ -67,6 +68,7 @@ impl Replicator {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: ReplicatorMsg) {
         match msg {
             ReplicatorMsg::SetTerm { term } => self.term = term,
@@ -80,12 +82,14 @@ impl Replicator {
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn replicate_entry(&self, entry: Entry) {
         for worker in self.workers.values() {
             worker.replicate_entry(entry.clone()).await;
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn add_to_batch(&self, entry: Entry) {
         for worker in self.workers.values() {
             worker.add_to_replication_batch(entry.clone()).await;
@@ -93,12 +97,14 @@ impl Replicator {
     }
 
     // can be used for sending heartbeats
+    #[tracing::instrument(ret, level = "debug")]
     async fn flush_batch(&self) {
         for worker in self.workers.values() {
             worker.flush_replication_batch().await;
         }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn register_workers_at_executor(&self) {
         for worker in self.workers.keys() {
             self.executor.register_worker(*worker).await;
@@ -112,6 +118,7 @@ pub struct ReplicatorHandle {
 }
 
 impl ReplicatorHandle {
+    #[tracing::instrument(ret, level = "debug")]
     pub fn new(
         executor: ExecutorHandle,
         term_store: TermStoreHandle,
@@ -128,31 +135,37 @@ impl ReplicatorHandle {
         Self { sender }
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn replicate_entry(&self, entry: Entry) {
         let msg = ReplicatorMsg::ReplicateEntry { entry };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn add_to_batch(&self, entry: Entry) {
         let msg = ReplicatorMsg::AddToBatch { entry };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn flush_batch(&self) {
         let msg = ReplicatorMsg::FlushBatch;
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn register_workers_at_executor(&self) {
         let msg = ReplicatorMsg::RegisterWorkers;
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn set_term(&self, term: u64) {
         let msg = ReplicatorMsg::SetTerm { term };
         let _ = self.sender.send(msg).await;
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     pub async fn get_term(&self) -> u64 {
         let (send, recv) = oneshot::channel();
         let msg = ReplicatorMsg::GetTerm { respond_to: send };

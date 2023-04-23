@@ -11,8 +11,10 @@ use tonic::{Request, Response, Status};
 pub struct RaftServer {
     core: CoreHandles,
 }
+
 #[tonic::async_trait]
 impl RaftRpc for RaftServer {
+    #[tracing::instrument(ret, level = "debug")]
     async fn append_entries(
         &self,
         request: Request<AppendEntriesRequest>,
@@ -70,6 +72,7 @@ impl RaftRpc for RaftServer {
         Ok(Response::new(reply))
     }
 
+    #[tracing::instrument(ret, level = "debug")]
     async fn request_votes(
         &self,
         request: Request<RequestVoteRequest>,

@@ -10,6 +10,7 @@ pub struct Reply {
     pub success_or_granted: bool,
 }
 
+#[tracing::instrument(ret, level = "debug")]
 pub async fn request_vote(
     uri: String,
     vote_request: RequestVoteRequest,
@@ -32,6 +33,7 @@ pub async fn request_vote(
     })
 }
 
+#[tracing::instrument(ret, level = "debug")]
 pub async fn append_entry(
     uri: String,
     append_entry_request: AppendEntriesRequest,
