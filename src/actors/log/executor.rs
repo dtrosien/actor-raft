@@ -35,7 +35,8 @@ enum ExecutorMsg {
         respond_to: oneshot::Sender<u64>,
     },
     CommitLog {
-        entry: Entry,
+        entry: Option<Entry>,
+        leader_commit: u64,
     },
     ApplyLog {
         respond_to: oneshot::Sender<Result<bool, Box<dyn Error + Send + Sync>>>,
@@ -89,7 +90,10 @@ impl Executor {
     #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: ExecutorMsg) {
         match msg {
-            ExecutorMsg::CommitLog { entry } => self.commit_log(entry).await,
+            ExecutorMsg::CommitLog {
+                entry,
+                leader_commit,
+            } => self.commit_log(entry, leader_commit).await,
             ExecutorMsg::ApplyLog { respond_to } => {
                 let _ = respond_to.send(self.apply_log().await);
             }
@@ -117,10 +121,12 @@ impl Executor {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    async fn commit_log(&mut self, entry: Entry) {
+    async fn commit_log(&mut self, entry: Option<Entry>, leader_commit: u64) {
         // todo leader commit should not be in entry because it might be wrong when reloaded from disc
-        if entry.leader_commit > self.commit_index {
-            self.commit_index = min(entry.leader_commit, entry.index);
+        if let Some(entry) = entry {
+            if leader_commit > self.commit_index {
+                self.commit_index = min(leader_commit, entry.index);
+            }
         }
     }
 
@@ -182,8 +188,11 @@ impl ExecutorHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    pub async fn commit_log(&self, entry: Entry) {
-        let msg = ExecutorMsg::CommitLog { entry };
+    pub async fn commit_log(&self, entry: Option<Entry>, leader_commit: u64) {
+        let msg = ExecutorMsg::CommitLog {
+            entry,
+            leader_commit,
+        };
         let _ = self.sender.send(msg).await;
     }
 
@@ -327,20 +336,21 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 0,
-            leader_commit: 2,
             payload: "".to_string(),
         };
-        executor.commit_log(entry1).await;
+        executor.commit_log(Some(entry1), 2).await;
         assert_eq!(executor.get_commit_index().await, 1);
 
         //leader commit is lower than index -> leader commit wins
         let entry2 = Entry {
             index: 4,
             term: 0,
-            leader_commit: 2,
             payload: "".to_string(),
         };
-        executor.commit_log(entry2).await;
+        executor.commit_log(Some(entry2), 2).await;
+        assert_eq!(executor.get_commit_index().await, 2);
+
+        executor.commit_log(None, 2).await;
         assert_eq!(executor.get_commit_index().await, 2);
     }
 
@@ -352,13 +362,11 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 1,
-            leader_commit: 2,
             payload: "".to_string(),
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
-            leader_commit: 2,
             payload: "".to_string(),
         };
         log_store.append_entry(entry1).await;
@@ -422,7 +430,6 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 0,
-                leader_commit: i,
                 payload: "".to_string(),
             };
             log_store.append_entry(entry).await;

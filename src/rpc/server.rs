@@ -54,10 +54,9 @@ impl RaftRpc for RaftServer {
         self.core.log_store.append_entries(entries.clone()).await;
 
         // step 5
-        // todo change to Option(entry) or entries and remove leader commmit from entry
         self.core
             .executor
-            .commit_log(entries.front().unwrap().clone())
+            .commit_log(entries.front().cloned(), rpc_arguments.leader_commit)
             .await;
         self.core
             .executor

@@ -212,25 +212,21 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entry4 = Entry {
             index: 3,
             term: 1111111,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let mut db = TEST_DB.lock().await;
@@ -254,7 +250,6 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let mut db = TEST_DB.lock().await;
@@ -269,19 +264,16 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entries = vec![entry1.clone(), entry2.clone(), entry3.clone()];
@@ -300,19 +292,16 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
-            leader_commit: 0,
             payload: "some payload".to_string(),
         };
         let mut db = TEST_DB.lock().await;

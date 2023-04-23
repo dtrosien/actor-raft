@@ -331,7 +331,6 @@ mod tests {
         let entry = Entry {
             index: 1,
             term: 1,
-            leader_commit: 0,
             payload: "".to_string(),
         };
 
@@ -391,7 +390,6 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
-                leader_commit: 0,
                 payload: "".to_string(),
             };
             worker.add_to_replication_batch(entry.clone()).await;
@@ -450,7 +448,6 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
-                leader_commit: 0,
                 payload: "".to_string(),
             };
             log_store.append_entry(entry.clone()).await;
@@ -461,7 +458,6 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
-                leader_commit: 10,
                 payload: "".to_string(),
             };
             log_store.append_entry(entry.clone()).await;

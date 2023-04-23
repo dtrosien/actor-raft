@@ -212,7 +212,6 @@ mod tests {
         let entry = Entry {
             index: 1,
             term: 1,
-            leader_commit: 0,
             payload: "".to_string(),
         };
 
@@ -248,7 +247,6 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
-                leader_commit: 0,
                 payload: "".to_string(),
             };
             replicator.add_to_batch(entry.clone()).await;
