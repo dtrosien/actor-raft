@@ -1,10 +1,12 @@
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct Actor {
     receiver: mpsc::Receiver<ActorMsg>,
     id: u64,
 }
 
+#[derive(Debug)]
 enum ActorMsg {
     GetId { respond_to: oneshot::Sender<u64> },
 }
@@ -33,7 +35,7 @@ impl Actor {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ActorHandle {
     sender: mpsc::Sender<ActorMsg>,
 }

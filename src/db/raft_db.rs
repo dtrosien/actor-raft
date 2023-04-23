@@ -2,6 +2,7 @@ use crate::raft_rpc::append_entries_request::Entry;
 use sled::Db;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct RaftDb {
     db: Db,
 }

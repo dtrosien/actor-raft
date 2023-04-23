@@ -8,6 +8,7 @@ use crate::raft_rpc::RequestVoteRequest;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct Initiator {
     receiver: mpsc::Receiver<InitiatorMsg>,
     term_store: TermStoreHandle,
@@ -20,6 +21,7 @@ struct Initiator {
     last_log_term: u64,
 }
 
+#[derive(Debug)]
 enum InitiatorMsg {
     GetVotedFor {
         respond_to: oneshot::Sender<Option<u64>>,
@@ -161,7 +163,7 @@ impl Initiator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InitiatorHandle {
     sender: mpsc::Sender<InitiatorMsg>,
 }

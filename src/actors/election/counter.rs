@@ -1,6 +1,7 @@
 use crate::actors::watchdog::WatchdogHandle;
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct Counter {
     receiver: mpsc::Receiver<CounterMsg>,
     watchdog: WatchdogHandle,
@@ -8,6 +9,7 @@ struct Counter {
     votes_required: u64,
 }
 
+#[derive(Debug)]
 enum CounterMsg {
     RegisterVote { vote: Option<bool> },
     GetVotesReceived { respond_to: oneshot::Sender<u64> },
@@ -58,7 +60,7 @@ impl Counter {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CounterHandle {
     sender: mpsc::Sender<CounterMsg>,
 }

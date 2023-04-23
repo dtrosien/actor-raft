@@ -214,7 +214,7 @@ fn unwrap_index_and_term(
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LogStoreHandle {
     sender: mpsc::Sender<LogStoreMsg>,
 }

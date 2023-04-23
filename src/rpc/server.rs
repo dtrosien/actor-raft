@@ -1,5 +1,5 @@
 use crate::raft::CoreHandles;
-use crate::raft_rpc::append_entries_request::Entry;
+
 use crate::raft_rpc::raft_rpc_server::RaftRpc;
 use crate::raft_rpc::{
     AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
@@ -7,6 +7,7 @@ use crate::raft_rpc::{
 use std::collections::VecDeque;
 use tonic::{Request, Response, Status};
 
+#[derive(Debug)]
 pub struct RaftServer {
     core: CoreHandles,
 }

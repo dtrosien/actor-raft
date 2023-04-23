@@ -4,7 +4,7 @@ use std::error::Error;
 use std::time::Duration;
 use tonic::transport::Channel;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Reply {
     pub term: u64,
     pub success_or_granted: bool,

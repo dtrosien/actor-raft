@@ -11,6 +11,7 @@ use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
 use std::time::Duration;
 
+#[derive(Debug)]
 pub struct Raft {
     state_store: StateStoreHandle,
     watchdog: WatchdogHandle,
@@ -69,7 +70,7 @@ async fn create_actors(watchdog: WatchdogHandle, term_store: TermStoreHandle) ->
     // }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CoreHandles {
     // todo make attributes private when it is clear which funcs aare needed in server
     pub timer: TimerHandle,

@@ -7,10 +7,13 @@ pub enum ServerState {
     Candidate,
 }
 
+#[derive(Debug)]
 struct StateStore {
     receiver: mpsc::Receiver<StateMsg>,
     state: ServerState,
 }
+
+#[derive(Debug)]
 enum StateMsg {
     ChangeState {
         state: ServerState,

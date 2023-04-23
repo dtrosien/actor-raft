@@ -8,6 +8,7 @@ use crate::raft_rpc::append_entries_request::Entry;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
+#[derive(Debug)]
 struct Replicator {
     receiver: mpsc::Receiver<ReplicatorMsg>,
     term: u64,
@@ -15,6 +16,7 @@ struct Replicator {
     workers: BTreeMap<u64, WorkerHandle>,
 }
 
+#[derive(Debug)]
 enum ReplicatorMsg {
     SetTerm { term: u64 },
     GetTerm { respond_to: oneshot::Sender<u64> },
@@ -104,7 +106,7 @@ impl Replicator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ReplicatorHandle {
     sender: mpsc::Sender<ReplicatorMsg>,
 }

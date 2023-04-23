@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 //todo use config lib like i.e config-rs
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
     pub id: u64,
     pub ip: String,
@@ -12,7 +12,7 @@ pub struct Config {
     pub nodes: Vec<Node>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Eq, Hash, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, Hash, PartialEq)]
 pub struct Node {
     pub id: u64,
     pub ip: String,
