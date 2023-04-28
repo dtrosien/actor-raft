@@ -17,7 +17,7 @@ enum TermMsg {
         respond_to: oneshot::Sender<u64>,
     },
     CheckTermAndReply {
-        respond_to: oneshot::Sender<Option<bool>>,
+        respond_to: oneshot::Sender<(bool, u64)>,
         term: u64,
     },
     CheckTerm {
@@ -83,13 +83,14 @@ impl TermStore {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    async fn check_term_and_reply(&self, term: u64) -> Option<bool> {
+    async fn check_term_and_reply(&mut self, term: u64) -> (bool, u64) {
         match term.cmp(&self.current_term) {
-            Ordering::Less => Some(false),
-            Ordering::Equal => Some(true),
+            Ordering::Less => (false, self.current_term),
+            Ordering::Equal => (true, self.current_term),
             Ordering::Greater => {
+                self.current_term = term;
                 self.watchdog.term_error().await;
-                None
+                (true, self.current_term)
             }
         }
     }
@@ -153,7 +154,7 @@ impl TermStoreHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    pub async fn check_term_and_reply(&self, term: u64) -> Option<bool> {
+    pub async fn check_term_and_reply(&self, term: u64) -> (bool, u64) {
         let (send, recv) = oneshot::channel();
         let msg = TermMsg::CheckTermAndReply {
             respond_to: send,
@@ -228,12 +229,15 @@ mod tests {
 
         assert_eq!(
             term_store.check_term_and_reply(correct_term).await,
-            Some(true)
+            (true, 2)
         );
         assert_eq!(
             term_store.check_term_and_reply(smaller_term).await,
-            Some(false)
+            (false, 2)
         );
-        assert_eq!(term_store.check_term_and_reply(bigger_term).await, None);
+        assert_eq!(
+            term_store.check_term_and_reply(bigger_term).await,
+            (true, 3)
+        );
     }
 }
