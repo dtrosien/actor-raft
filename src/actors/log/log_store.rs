@@ -51,7 +51,7 @@ enum LogStoreMsg {
     ResetLog {
         respond_to: oneshot::Sender<()>,
     },
-    PrevEntryMatch {
+    LastEntryMatch {
         respond_to: oneshot::Sender<bool>,
         index: u64,
         term: u64,
@@ -117,12 +117,12 @@ impl LogStore {
             LogStoreMsg::ResetLog { respond_to } => {
                 let _ = respond_to.send(self.reset_log().await);
             }
-            LogStoreMsg::PrevEntryMatch {
+            LogStoreMsg::LastEntryMatch {
                 respond_to,
                 index,
                 term,
             } => {
-                let _ = respond_to.send(self.prev_entry_match(index, term).await);
+                let _ = respond_to.send(self.last_entry_match(index, term).await);
             }
         }
     }
@@ -229,7 +229,7 @@ impl LogStore {
 
     // this method covers step 2 of the append entries rpc receiver implementation of the raft paper
     #[tracing::instrument(ret, level = "debug")]
-    async fn prev_entry_match(&mut self, index: u64, term: u64) -> bool {
+    async fn last_entry_match(&mut self, index: u64, term: u64) -> bool {
         if (index == self.last_log_index) && (term == self.last_log_term) {
             return true;
         };
@@ -319,9 +319,9 @@ impl LogStoreHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    pub async fn previous_entry_match(&self, index: u64, term: u64) -> bool {
+    pub async fn last_entry_match(&self, index: u64, term: u64) -> bool {
         let (send, recv) = oneshot::channel();
-        let msg = LogStoreMsg::PrevEntryMatch {
+        let msg = LogStoreMsg::LastEntryMatch {
             respond_to: send,
             index,
             term,
@@ -467,8 +467,8 @@ mod tests {
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
 
-        assert!(log_store.previous_entry_match(0, 0).await);
-        assert!(!log_store.previous_entry_match(1, 0).await);
+        assert!(log_store.last_entry_match(0, 0).await);
+        assert!(!log_store.last_entry_match(1, 0).await);
 
         let entry1 = Entry {
             index: 1,
@@ -478,7 +478,7 @@ mod tests {
 
         log_store.append_entry(entry1).await;
 
-        assert!(log_store.previous_entry_match(1, 1).await);
+        assert!(log_store.last_entry_match(1, 1).await);
 
         let entry2 = Entry {
             index: 2,
@@ -488,9 +488,9 @@ mod tests {
         log_store.append_entry(entry2).await;
 
         // check succeeds since both log store attributes term and index matches
-        assert!(log_store.previous_entry_match(2, 1).await);
+        assert!(log_store.last_entry_match(2, 1).await);
 
         // this check also succeed since now the entry from DB is read which matches index and term
-        assert!(log_store.previous_entry_match(1, 1).await);
+        assert!(log_store.last_entry_match(1, 1).await);
     }
 }

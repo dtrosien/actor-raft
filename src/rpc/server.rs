@@ -20,13 +20,17 @@ impl RaftRpc for RaftServer {
         request: Request<AppendEntriesRequest>,
     ) -> Result<Response<AppendEntriesReply>, Status> {
         let rpc_arguments = request.into_inner();
-        let rpc_term = rpc_arguments.term;
-        let current_term = self.core.term_store.get_term().await;
 
         let entries = VecDeque::from(rpc_arguments.entries);
 
         // step 1
-        if rpc_term < current_term {
+        let (term_ok, current_term) = self
+            .core
+            .term_store
+            .check_term_and_reply(rpc_arguments.term)
+            .await;
+
+        if !term_ok {
             let reply = AppendEntriesReply {
                 term: current_term,
                 success: false,
@@ -38,7 +42,7 @@ impl RaftRpc for RaftServer {
         if !self
             .core
             .log_store
-            .previous_entry_match(rpc_arguments.prev_log_index, rpc_arguments.prev_log_term)
+            .last_entry_match(rpc_arguments.prev_log_index, rpc_arguments.prev_log_term)
             .await
         {
             return deny_append_request(current_term);
@@ -72,17 +76,22 @@ impl RaftRpc for RaftServer {
     ) -> Result<Response<RequestVoteReply>, Status> {
         let rpc_arguments = request.into_inner();
 
-        let current_term = self.core.term_store.get_term().await;
+        let (term_ok, current_term) = self
+            .core
+            .term_store
+            .check_term_and_reply(rpc_arguments.term)
+            .await;
 
-        if rpc_arguments.term < current_term {
+        // step 1: reply false if term < current_term
+        if !term_ok {
             return deny_vote_request(current_term);
         }
 
-        // let rpc_last_log_term = rpc_arguments.last_log_term; todo not needed?
+        // step 2: if voted_for is none or candidate_id,
+        // and candidates log is at least as up to date as receivers log, grant vote
 
-        let voted_for = self.core.initiator.get_voted_for().await;
+        let voted_for = self.core.initiator.get_voted_for().await; // todo candidate id needs to be reset in the beginning of a new term (triggered by term store? or by state change)
         let last_log_index = self.core.log_store.get_last_log_index().await;
-        // let last_log_term = self.core.log_store.get_last_log_term().await; todo not needed?
 
         let vote_granted_id = match voted_for {
             None => true,
@@ -92,6 +101,13 @@ impl RaftRpc for RaftServer {
         let vote_granted_log = rpc_arguments.last_log_index >= last_log_index;
 
         let vote_granted = vote_granted_id && vote_granted_log;
+
+        if vote_granted {
+            self.core
+                .initiator
+                .set_voted_for(rpc_arguments.candidate_id)
+                .await;
+        }
 
         let reply = RequestVoteReply {
             term: current_term,
@@ -120,23 +136,28 @@ fn deny_vote_request(term: u64) -> Result<Response<RequestVoteReply>, Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::log::replication::worker::StateMeta;
+    use crate::actors::log::log_store::LogStoreHandle;
+    use crate::actors::log::replication::worker::ReplicatorStateMeta;
     use crate::actors::log::test_utils::TestApp;
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
     use crate::config::Config;
     use crate::db::test_utils::get_test_db_paths;
     use crate::raft_rpc::append_entries_request::Entry;
-    use std::time::Duration;
 
     #[tokio::test]
     async fn append_entry_test() {
         let mut db_paths = get_test_db_paths(3).await;
         let wd = WatchdogHandle::default();
         let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
-        let state_meta = StateMeta {
-            previous_log_index: 0, // todo why couldnt this be set to zero inside actor
-            previous_log_term: 0,  // todo why couldnt this be set to zero inside actor
+        let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
+
+        log_store.reset_log().await;
+        term_store.reset_term().await;
+
+        let state_meta = ReplicatorStateMeta {
+            previous_log_index: 0, // only matters for replicator
+            previous_log_term: 0,  //only matters for replicator
             term: 0,
             leader_id: 0,
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
@@ -146,38 +167,42 @@ mod tests {
             Config::for_test().await,
             Box::new(TestApp {}),
             term_store,
+            log_store,
             state_meta,
-            db_paths.pop().unwrap(),
             db_paths.pop().unwrap(),
         );
         let raft_server = RaftServer { core };
 
-        raft_server.core.log_store.reset_log().await;
+        raft_server.core.initiator.reset_voted_for().await;
+
+        let payload = "some payload".to_string();
+
+        // 1st request
 
         let entry1 = Entry {
             index: 1,
             term: 0,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry3 = Entry {
             index: 3,
             term: 2,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry4 = Entry {
             index: 4,
             term: 2,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry5 = Entry {
             index: 5,
             term: 2,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
 
         let entries = vec![entry1, entry2, entry3, entry4, entry5];
@@ -191,18 +216,25 @@ mod tests {
             leader_commit: 5,
         };
         let request1 = Request::new(msg1);
-        raft_server
+
+        let reply = raft_server
             .append_entries(request1)
             .await
-            .expect("TODO: panic message");
+            .unwrap()
+            .into_inner();
+
+        assert!(reply.success);
+        assert_eq!(reply.term, 2);
 
         assert_eq!(raft_server.core.log_store.get_last_log_index().await, 5);
         assert_eq!(raft_server.core.executor.get_last_applied().await, 5);
 
+        // 2nd request
+
         let entry6 = Entry {
             index: 6,
             term: 2,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
 
         let msg2 = AppendEntriesRequest {
@@ -215,17 +247,23 @@ mod tests {
         };
         let request2 = Request::new(msg2);
 
-        raft_server
+        let reply2 = raft_server
             .append_entries(request2)
             .await
-            .expect("TODO: panic message");
+            .unwrap()
+            .into_inner();
+
+        assert!(reply2.success);
+        assert_eq!(reply2.term, 2);
 
         assert_eq!(raft_server.core.log_store.get_last_log_index().await, 6);
 
         assert_eq!(raft_server.core.executor.get_last_applied().await, 6);
 
+        // 3rd request
+
         let msg3 = AppendEntriesRequest {
-            term: 2,
+            term: 4,
             leader_id: 0,
             prev_log_index: 5,
             prev_log_term: 2,
@@ -234,15 +272,136 @@ mod tests {
         };
         let request3 = Request::new(msg3);
 
-        raft_server
+        let reply3 = raft_server
             .append_entries(request3)
             .await
-            .expect("TODO: panic message");
+            .unwrap()
+            .into_inner();
 
+        assert!(reply3.success);
+        assert_eq!(reply3.term, 4);
         assert_eq!(raft_server.core.log_store.get_last_log_index().await, 6);
 
         assert_eq!(raft_server.core.executor.get_last_applied().await, 6);
 
-        //todo further testing
+        assert_eq!(
+            raft_server
+                .core
+                .log_store
+                .read_last_entry()
+                .await
+                .unwrap()
+                .payload,
+            payload
+        );
+    }
+
+    #[tokio::test]
+    async fn request_votes_test() {
+        let mut db_paths = get_test_db_paths(3).await;
+        let wd = WatchdogHandle::default();
+        let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
+        let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
+
+        log_store.reset_log().await;
+        term_store.reset_term().await;
+
+        let state_meta = ReplicatorStateMeta {
+            previous_log_index: 0, // only matters for replicator
+            previous_log_term: 0,  // only matters for replicator
+            term: 0,
+            leader_id: 0,
+            leader_commit: 0, // todo why couldnt this be set to zero inside actor
+        };
+        let core = CoreHandles::new(
+            wd,
+            Config::for_test().await,
+            Box::new(TestApp {}),
+            term_store,
+            log_store,
+            state_meta,
+            db_paths.pop().unwrap(),
+        );
+        let raft_server = RaftServer { core };
+
+        raft_server.core.initiator.reset_voted_for().await;
+
+        assert_eq!(raft_server.core.term_store.get_term().await, 0);
+
+        // grant vote since voted for is none and term > current term
+        let msg = RequestVoteRequest {
+            term: 1,
+            candidate_id: 1,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+
+        let request = Request::new(msg);
+
+        let reply = raft_server
+            .request_votes(request)
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert!(reply.vote_granted);
+        assert_eq!(reply.term, 1);
+
+        // deny vote since term < than current term
+        let msg2 = RequestVoteRequest {
+            term: 0,
+            candidate_id: 2,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+
+        let request2 = Request::new(msg2);
+
+        let reply2 = raft_server
+            .request_votes(request2)
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert!(!reply2.vote_granted);
+        assert_eq!(reply2.term, 1);
+
+        // deny vote for id 2, since id 1 was already granted
+        let msg3 = RequestVoteRequest {
+            term: 1,
+            candidate_id: 2,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+
+        let request3 = Request::new(msg3);
+
+        let reply3 = raft_server
+            .request_votes(request3)
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert!(!reply3.vote_granted);
+        assert_eq!(reply3.term, 1);
+
+        // grant vote for id 1 since it was already granted before (term cannot be checked here)
+        let msg4 = RequestVoteRequest {
+            term: 1,
+            candidate_id: 1,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+
+        let request4 = Request::new(msg4);
+
+        let reply4 = raft_server
+            .request_votes(request4)
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert!(reply4.vote_granted);
+        assert_eq!(reply4.term, 1);
     }
 }

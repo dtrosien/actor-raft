@@ -18,7 +18,7 @@ struct Worker {
     executor: ExecutorHandle,
     node: Node,
     uri: String,
-    state_meta: StateMeta,
+    state_meta: ReplicatorStateMeta,
     entries_cache: VecDeque<Entry>,
 }
 
@@ -28,7 +28,7 @@ enum WorkerMsg {
         respond_to: oneshot::Sender<Node>,
     },
     GetStateMeta {
-        respond_to: oneshot::Sender<StateMeta>,
+        respond_to: oneshot::Sender<ReplicatorStateMeta>,
     },
     GetCachedEntries {
         respond_to: oneshot::Sender<VecDeque<Entry>>,
@@ -50,7 +50,7 @@ impl Worker {
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
         node: Node,
-        state_meta: StateMeta,
+        state_meta: ReplicatorStateMeta,
     ) -> Self {
         let ip = node.ip.clone();
         let port = node.port;
@@ -206,7 +206,7 @@ impl WorkerHandle {
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
         node: Node,
-        state_meta: StateMeta,
+        state_meta: ReplicatorStateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Worker::new(receiver, term_store, log_store, executor, node, state_meta);
@@ -225,7 +225,7 @@ impl WorkerHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    async fn get_state_meta(&self) -> StateMeta {
+    async fn get_state_meta(&self) -> ReplicatorStateMeta {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetStateMeta { respond_to: send };
 
@@ -262,7 +262,7 @@ impl WorkerHandle {
 }
 
 #[derive(Clone, Debug)]
-pub struct StateMeta {
+pub struct ReplicatorStateMeta {
     pub previous_log_index: u64,
     pub previous_log_term: u64,
     pub term: u64,
@@ -270,9 +270,9 @@ pub struct StateMeta {
     pub leader_commit: u64,
 }
 
-impl StateMeta {
+impl ReplicatorStateMeta {
     pub fn new(term: u64) -> Self {
-        StateMeta {
+        ReplicatorStateMeta {
             previous_log_index: 0,
             previous_log_term: 0,
             term,
@@ -300,7 +300,7 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = StateMeta {
+        let meta = ReplicatorStateMeta {
             previous_log_index: 0,
             previous_log_term: 1,
             term: 1,
@@ -320,7 +320,7 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = StateMeta {
+        let meta = ReplicatorStateMeta {
             previous_log_index: 0,
             previous_log_term: 1,
             term: 1,
@@ -371,7 +371,7 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = StateMeta {
+        let meta = ReplicatorStateMeta {
             previous_log_index: 0,
             previous_log_term: 1,
             term: 1,
@@ -429,7 +429,7 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = StateMeta {
+        let meta = ReplicatorStateMeta {
             previous_log_index: 10,
             previous_log_term: 1,
             term: 1,

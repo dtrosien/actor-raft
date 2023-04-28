@@ -2,7 +2,7 @@ use crate::actors::election::initiator::InitiatorHandle;
 use crate::actors::log::executor::{App, ExecutorHandle};
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::replicator::ReplicatorHandle;
-use crate::actors::log::replication::worker::StateMeta;
+use crate::actors::log::replication::worker::ReplicatorStateMeta;
 use crate::actors::log::test_utils::TestApp;
 use crate::actors::state_store::StateStoreHandle;
 use crate::actors::term_store::TermStoreHandle;
@@ -65,15 +65,26 @@ async fn create_actors(
     log_db_path: String,
     vote_db_path: String,
 ) -> CoreHandles {
-    let state_meta = StateMeta::new(term_store.get_term().await); // todo check if this small meta init is possible
+    let config = Config::default();
+    let log_store = LogStoreHandle::new(log_db_path);
+    let previous_log_term = log_store.get_last_log_term().await;
+    let previous_log_index = log_store.get_last_log_index().await;
+    let term = term_store.get_term().await;
+    let state_meta = ReplicatorStateMeta {
+        previous_log_index,
+        previous_log_term,
+        term,
+        leader_id: config.id,
+        leader_commit: 0,
+    };
 
     CoreHandles::new(
         watchdog,
-        Config::default(),
+        config,
         Box::new(TestApp {}),
         term_store,
+        log_store,
         state_meta,
-        log_db_path,
         vote_db_path,
     )
     // match self.state {
@@ -101,15 +112,14 @@ impl CoreHandles {
         config: Config,
         app: Box<dyn App>,
         term_store: TermStoreHandle,
-        state_meta: StateMeta,
-        log_db_path: String,
+        log_store: LogStoreHandle,
+        state_meta: ReplicatorStateMeta,
         vote_db_path: String,
     ) -> Self {
         let timeout = Duration::from_millis(2);
         let timer = TimerHandle::new(watch_dog.clone(), timeout);
         let initiator =
             InitiatorHandle::new(term_store.clone(), watch_dog, config.clone(), vote_db_path);
-        let log_store = LogStoreHandle::new(log_db_path);
         let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, app);
         let replicator = ReplicatorHandle::new(
             executor.clone(),
@@ -148,9 +158,14 @@ mod tests {
     async fn test() {
         let wd = WatchdogHandle::default();
         let term_store = TermStoreHandle::new(wd.clone(), "databases/term_db".to_string());
-        let state_meta = StateMeta {
-            previous_log_index: 0, // todo why couldnt this be set to zero inside actor
-            previous_log_term: 0,  // todo why couldnt this be set to zero inside actor
+        let log_store = LogStoreHandle::new("databases/log_db".to_string());
+
+        let previous_log_term = log_store.get_last_log_term().await;
+        let previous_log_index = log_store.get_last_log_index().await;
+
+        let state_meta = ReplicatorStateMeta {
+            previous_log_index,
+            previous_log_term,
             term: 0,
             leader_id: 0,
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
@@ -161,8 +176,8 @@ mod tests {
             Config::default(),
             Box::new(TestApp {}),
             term_store,
+            log_store,
             state_meta,
-            "databases/log_db".to_string(),
             "databases/vote_db".to_string(),
         );
     }

@@ -1,6 +1,6 @@
 use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::replication::worker::{StateMeta, WorkerHandle};
+use crate::actors::log::replication::worker::{ReplicatorStateMeta, WorkerHandle};
 use crate::actors::term_store::TermStoreHandle;
 
 use crate::config::Config;
@@ -35,7 +35,7 @@ impl Replicator {
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        state_meta: StateMeta,
+        state_meta: ReplicatorStateMeta,
     ) -> Self {
         let workers = config
             .nodes
@@ -124,7 +124,7 @@ impl ReplicatorHandle {
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        state_meta: StateMeta,
+        state_meta: ReplicatorStateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Replicator::new(
@@ -191,7 +191,7 @@ mod tests {
     async fn term_test() {
         let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
             prepare_test_dependencies().await;
-        let state_meta = StateMeta {
+        let state_meta = ReplicatorStateMeta {
             previous_log_index: 0,
             previous_log_term: 0,
             term: 0,
@@ -276,7 +276,7 @@ mod tests {
 
     async fn prepare_test_dependencies() -> (
         Config,
-        StateMeta,
+        ReplicatorStateMeta,
         ReplicatorHandle,
         LogStoreHandle,
         ExecutorHandle,
@@ -298,7 +298,7 @@ mod tests {
 
         let config = Config::for_test().await;
 
-        let state_meta = StateMeta {
+        let state_meta = ReplicatorStateMeta {
             previous_log_index: 0,
             previous_log_term: 0,
             term: 1,
