@@ -27,8 +27,8 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             id: 0,
-            ip: "".to_string(),
-            port: 0,
+            ip: "[::1]".to_string(),
+            port: 50055,
             log_db_path: "databases/log-db".to_string(),
             term_db_path: "databases/term-db".to_string(),
             vote_db_path: "databases/vote-db".to_string(),
