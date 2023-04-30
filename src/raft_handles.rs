@@ -3,18 +3,19 @@ use crate::actors::log::executor::{App, ExecutorHandle};
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::replicator::ReplicatorHandle;
 use crate::actors::log::replication::worker::ReplicatorStateMeta;
-use crate::actors::log::test_utils::TestApp;
-use crate::actors::state_store::StateStoreHandle;
+
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::timer::TimerHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
+use rand::Rng;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct RaftHandles {
     // todo make attributes private when it is clear which funcs are needed in server
-    pub timeout_timer: TimerHandle,
+    pub state_timer: TimerHandle,
+    pub election_timer: TimerHandle, // todo maybe not needed here
     pub term_store: TermStoreHandle,
     // pub counter: CounterHandle, todo is initialized in Initiator, maybe better here?
     pub initiator: InitiatorHandle,
@@ -24,19 +25,27 @@ pub struct RaftHandles {
 }
 
 impl RaftHandles {
-    pub fn new(
+    pub fn build(
         watch_dog: WatchdogHandle,
         config: Config,
         app: Box<dyn App>,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         state_meta: ReplicatorStateMeta,
-        vote_db_path: String,
     ) -> Self {
-        let timeout = Duration::from_millis(20);
-        let timeout_timer = TimerHandle::new(watch_dog.clone(), timeout);
-        let initiator =
-            InitiatorHandle::new(term_store.clone(), watch_dog, config.clone(), vote_db_path);
+        let state_timeout = Duration::from_millis(config.state_timeout);
+        let election_timeout = Duration::from_millis(
+            rand::thread_rng()
+                .gen_range(config.election_timeout_range.0..config.election_timeout_range.1),
+        );
+        let state_timer = TimerHandle::new(watch_dog.clone(), state_timeout);
+        let election_timer = TimerHandle::new(watch_dog.clone(), election_timeout);
+        let initiator = InitiatorHandle::new(
+            term_store.clone(),
+            watch_dog,
+            config.clone(),
+            config.vote_db_path.clone(),
+        );
         let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, app);
         let replicator = ReplicatorHandle::new(
             executor.clone(),
@@ -47,7 +56,8 @@ impl RaftHandles {
         );
 
         Self {
-            timeout_timer,
+            state_timer,
+            election_timer,
             term_store,
             initiator,
             log_store,
@@ -57,11 +67,11 @@ impl RaftHandles {
     }
 
     pub async fn send_heartbeat(&self) {
-        self.timeout_timer.send_heartbeat().await;
+        self.state_timer.send_heartbeat().await;
     }
 
     pub async fn append_entries_api(&self) {
-        self.timeout_timer.send_heartbeat().await;
+        self.state_timer.send_heartbeat().await;
     }
 
     pub fn request_vote_api(&self) {}
@@ -70,12 +80,15 @@ impl RaftHandles {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actors::log::test_utils::TestApp;
+    use crate::config::get_test_config;
 
     #[tokio::test]
-    async fn test() {
+    async fn build_test() {
+        let config = get_test_config().await;
         let wd = WatchdogHandle::default();
-        let term_store = TermStoreHandle::new(wd.clone(), "databases/term_db".to_string());
-        let log_store = LogStoreHandle::new("databases/log_db".to_string());
+        let term_store = TermStoreHandle::new(wd.clone(), config.term_db_path.clone());
+        let log_store = LogStoreHandle::new(config.log_db_path.clone());
 
         let previous_log_term = log_store.get_last_log_term().await;
         let previous_log_index = log_store.get_last_log_index().await;
@@ -88,14 +101,13 @@ mod tests {
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
 
-        let handles = RaftHandles::new(
+        let _handles = RaftHandles::build(
             wd,
-            Config::default(),
+            config,
             Box::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
-            "databases/vote_db".to_string(),
         );
     }
 }

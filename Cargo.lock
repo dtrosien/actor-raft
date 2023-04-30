@@ -9,6 +9,7 @@ dependencies = [
  "bincode",
  "once_cell",
  "prost",
+ "rand",
  "serde",
  "sled",
  "tokio",

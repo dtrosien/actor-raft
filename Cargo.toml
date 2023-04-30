@@ -27,6 +27,8 @@ serde = { version = "1.0.147", features = ["derive"] } # used for (de-)serialzat
 once_cell = "1.17.1" # used for static port counter in rpc unit tests
 sled = "0.34.7" # embedded db
 bincode = "1.3.3" # used to serialize entries to binary
+rand = "0.8.5" # used to generate random election timeouts in a specific range
+
 
 [build-dependencies]
 tonic-build = "0.8"

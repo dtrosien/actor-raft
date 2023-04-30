@@ -37,7 +37,8 @@ impl Timer {
             _timeout = tokio::time::sleep(self.timeout)=> {
                 println!("timeout");
                self.watchdog.timeout().await;
-                break
+                    //todo break really needed?
+                    //break
             }
             }
         }

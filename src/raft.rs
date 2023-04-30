@@ -79,14 +79,13 @@ async fn create_actors(
         leader_commit: 0,
     };
 
-    RaftHandles::new(
+    RaftHandles::build(
         watchdog,
         config,
         Box::new(TestApp {}),
         term_store,
         log_store,
         state_meta,
-        vote_db_path,
     )
     // match self.state {
     //     State::Leader => ApiStruct {  },

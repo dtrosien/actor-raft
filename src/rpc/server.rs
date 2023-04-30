@@ -23,7 +23,7 @@ impl RaftRpc for RaftServer {
         let entries = VecDeque::from(rpc_arguments.entries);
 
         // reset timeout
-        self.handles.timeout_timer.send_heartbeat().await;
+        self.handles.state_timer.send_heartbeat().await;
 
         // step 1
         let (term_ok, current_term) = self
@@ -79,7 +79,7 @@ impl RaftRpc for RaftServer {
         let rpc_arguments = request.into_inner();
 
         // reset timeout
-        self.handles.timeout_timer.send_heartbeat().await;
+        self.handles.state_timer.send_heartbeat().await;
 
         // step 1: reply false if term < current_term
         let (term_ok, current_term) = self
@@ -168,14 +168,13 @@ mod tests {
         };
 
         let config = get_test_config().await;
-        let handles = RaftHandles::new(
+        let handles = RaftHandles::build(
             wd,
             config,
             Box::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
-            db_paths.pop().unwrap(),
         );
         let raft_server = RaftServer { handles };
 
@@ -320,14 +319,13 @@ mod tests {
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
         let config = get_test_config().await;
-        let handles = RaftHandles::new(
+        let handles = RaftHandles::build(
             wd,
             config,
             Box::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
-            db_paths.pop().unwrap(),
         );
         let raft_server = RaftServer { handles };
 
