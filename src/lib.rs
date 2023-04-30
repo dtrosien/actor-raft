@@ -2,6 +2,7 @@ extern crate core;
 
 mod actors;
 mod config;
+pub mod raft_handles;
 mod db;
 pub mod raft;
 mod rpc;

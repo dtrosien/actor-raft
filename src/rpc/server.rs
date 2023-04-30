@@ -1,5 +1,4 @@
-use crate::raft::CoreHandles;
-
+use crate::raft_handles::RaftHandles;
 use crate::raft_rpc::raft_rpc_server::RaftRpc;
 use crate::raft_rpc::{
     AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
@@ -9,7 +8,7 @@ use tonic::{Request, Response, Status};
 
 #[derive(Debug)]
 pub struct RaftServer {
-    core: CoreHandles,
+    handles: RaftHandles,
 }
 
 #[tonic::async_trait]
@@ -24,11 +23,11 @@ impl RaftRpc for RaftServer {
         let entries = VecDeque::from(rpc_arguments.entries);
 
         // reset timeout
-        self.core.timer.send_heartbeat().await;
+        self.handles.timeout_timer.send_heartbeat().await;
 
         // step 1
         let (term_ok, current_term) = self
-            .core
+            .handles
             .term_store
             .check_term_and_reply(rpc_arguments.term)
             .await;
@@ -43,7 +42,7 @@ impl RaftRpc for RaftServer {
 
         // step 2
         if !self
-            .core
+            .handles
             .log_store
             .last_entry_match(rpc_arguments.prev_log_index, rpc_arguments.prev_log_term)
             .await
@@ -52,14 +51,14 @@ impl RaftRpc for RaftServer {
         }
 
         // step 3 & 4
-        self.core.log_store.append_entries(entries.clone()).await;
+        self.handles.log_store.append_entries(entries.clone()).await;
 
         // step 5
-        self.core
+        self.handles
             .executor
             .commit_log(entries.back().cloned(), rpc_arguments.leader_commit)
             .await;
-        self.core
+        self.handles
             .executor
             .apply_log()
             .await
@@ -80,11 +79,11 @@ impl RaftRpc for RaftServer {
         let rpc_arguments = request.into_inner();
 
         // reset timeout
-        self.core.timer.send_heartbeat().await;
+        self.handles.timeout_timer.send_heartbeat().await;
 
         // step 1: reply false if term < current_term
         let (term_ok, current_term) = self
-            .core
+            .handles
             .term_store
             .check_term_and_reply(rpc_arguments.term)
             .await;
@@ -95,8 +94,8 @@ impl RaftRpc for RaftServer {
 
         // step 2: if voted_for is none or candidate_id,
         // and candidates log is at least as up to date as receivers log, grant vote
-        let voted_for = self.core.initiator.get_voted_for().await; // todo candidate id needs to be reset in the beginning of a new term (triggered by term store? or by state change)
-        let last_log_index = self.core.log_store.get_last_log_index().await;
+        let voted_for = self.handles.initiator.get_voted_for().await; // todo candidate id needs to be reset in the beginning of a new term (triggered by term store? or by state change)
+        let last_log_index = self.handles.log_store.get_last_log_index().await;
 
         let vote_granted_id = match voted_for {
             None => true,
@@ -108,7 +107,7 @@ impl RaftRpc for RaftServer {
         let vote_granted = vote_granted_id && vote_granted_log;
 
         if vote_granted {
-            self.core
+            self.handles
                 .initiator
                 .set_voted_for(rpc_arguments.candidate_id)
                 .await;
@@ -169,7 +168,7 @@ mod tests {
         };
 
         let config = get_test_config().await;
-        let core = CoreHandles::new(
+        let handles = RaftHandles::new(
             wd,
             config,
             Box::new(TestApp {}),
@@ -178,9 +177,9 @@ mod tests {
             state_meta,
             db_paths.pop().unwrap(),
         );
-        let raft_server = RaftServer { core };
+        let raft_server = RaftServer { handles };
 
-        raft_server.core.initiator.reset_voted_for().await;
+        raft_server.handles.initiator.reset_voted_for().await;
 
         let payload = "some payload".to_string();
 
@@ -233,8 +232,8 @@ mod tests {
         assert!(reply.success);
         assert_eq!(reply.term, 2);
 
-        assert_eq!(raft_server.core.log_store.get_last_log_index().await, 5);
-        assert_eq!(raft_server.core.executor.get_last_applied().await, 5);
+        assert_eq!(raft_server.handles.log_store.get_last_log_index().await, 5);
+        assert_eq!(raft_server.handles.executor.get_last_applied().await, 5);
 
         // 2nd request
 
@@ -263,9 +262,9 @@ mod tests {
         assert!(reply2.success);
         assert_eq!(reply2.term, 2);
 
-        assert_eq!(raft_server.core.log_store.get_last_log_index().await, 6);
+        assert_eq!(raft_server.handles.log_store.get_last_log_index().await, 6);
 
-        assert_eq!(raft_server.core.executor.get_last_applied().await, 6);
+        assert_eq!(raft_server.handles.executor.get_last_applied().await, 6);
 
         // 3rd request
 
@@ -287,13 +286,13 @@ mod tests {
 
         assert!(reply3.success);
         assert_eq!(reply3.term, 4);
-        assert_eq!(raft_server.core.log_store.get_last_log_index().await, 6);
+        assert_eq!(raft_server.handles.log_store.get_last_log_index().await, 6);
 
-        assert_eq!(raft_server.core.executor.get_last_applied().await, 6);
+        assert_eq!(raft_server.handles.executor.get_last_applied().await, 6);
 
         assert_eq!(
             raft_server
-                .core
+                .handles
                 .log_store
                 .read_last_entry()
                 .await
@@ -321,7 +320,7 @@ mod tests {
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
         let config = get_test_config().await;
-        let core = CoreHandles::new(
+        let handles = RaftHandles::new(
             wd,
             config,
             Box::new(TestApp {}),
@@ -330,11 +329,11 @@ mod tests {
             state_meta,
             db_paths.pop().unwrap(),
         );
-        let raft_server = RaftServer { core };
+        let raft_server = RaftServer { handles };
 
-        raft_server.core.initiator.reset_voted_for().await;
+        raft_server.handles.initiator.reset_voted_for().await;
 
-        assert_eq!(raft_server.core.term_store.get_term().await, 0);
+        assert_eq!(raft_server.handles.term_store.get_term().await, 0);
 
         // grant vote since voted for is none and term > current term
         let msg = RequestVoteRequest {
