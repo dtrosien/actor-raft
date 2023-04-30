@@ -145,7 +145,7 @@ mod tests {
     use crate::actors::log::test_utils::TestApp;
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::config::{get_test_config, Config};
+    use crate::config::get_test_config;
     use crate::db::test_utils::get_test_db_paths;
     use crate::raft_rpc::append_entries_request::Entry;
 
