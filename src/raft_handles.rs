@@ -94,6 +94,13 @@ impl RaftHandles {
         }
     }
 
+    // only in leader state
+    pub async fn send_heartbeat(&self) {
+        if self.state_store.get_state().await == ServerState::Leader {
+            self.replicator.flush_batch().await;
+        }
+    }
+
     // only in follower state
     pub async fn request_votes(&self) {
         if self.state_store.get_state().await == ServerState::Candidate {

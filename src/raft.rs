@@ -6,6 +6,7 @@ use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
 use crate::raft_handles::RaftHandles;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct Raft {
@@ -13,6 +14,7 @@ pub struct Raft {
     watchdog: WatchdogHandle,
     term_store: TermStoreHandle,
     handles: RaftHandles,
+    config: Config,
 }
 
 impl Raft {
@@ -21,7 +23,7 @@ impl Raft {
         let watchdog = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(watchdog.clone(), config.term_db_path.clone());
         let handles = create_actors(
-            config,
+            config.clone(),
             state_store.clone(),
             watchdog.clone(),
             term_store.clone(),
@@ -32,6 +34,7 @@ impl Raft {
             watchdog,
             term_store,
             handles,
+            config,
         }
     }
 
@@ -42,8 +45,14 @@ impl Raft {
     pub async fn run(&mut self) {
         let mut exit_state_r = self.watchdog.get_exit_receiver().await;
         println!("{:?}", self.state_store.get_state().await);
+        self.handles.request_votes().await;
 
-        exit_state_r.recv().await.expect("TODO: panic message");
+        // todo more readable
+        tokio::select! {
+            _state_change = exit_state_r.recv() =>{},
+            _leader = self.send_heartbeats() => {}
+        }
+
         println!("{:?}", self.state_store.get_state().await);
     }
 
@@ -51,6 +60,14 @@ impl Raft {
         //todo introduce complete shutdown ... shutdown should be renamed to exit/shutdown current state
         loop {
             self.run().await;
+        }
+    }
+
+    pub async fn send_heartbeats(&self) {
+        let hb_interval = Duration::from_millis(self.config.state_timeout / 2); // todo into config
+        loop {
+            self.handles.send_heartbeat().await;
+            tokio::time::sleep(hb_interval).await;
         }
     }
 }
