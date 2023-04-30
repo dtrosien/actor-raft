@@ -97,7 +97,9 @@ impl RaftHandles {
     // only in follower state
     pub async fn request_votes(&self) {
         if self.state_store.get_state().await == ServerState::Candidate {
-            self.initiator.start_election().await; // todo counter needs timeout
+            // todo counter needs timeout
+            // todo voted for must be initialized after term change
+            self.initiator.start_election().await;
         }
     }
 }
