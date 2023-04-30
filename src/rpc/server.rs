@@ -23,6 +23,9 @@ impl RaftRpc for RaftServer {
 
         let entries = VecDeque::from(rpc_arguments.entries);
 
+        // reset timeout
+        self.core.timer.send_heartbeat().await;
+
         // step 1
         let (term_ok, current_term) = self
             .core
@@ -76,20 +79,22 @@ impl RaftRpc for RaftServer {
     ) -> Result<Response<RequestVoteReply>, Status> {
         let rpc_arguments = request.into_inner();
 
+        // reset timeout
+        self.core.timer.send_heartbeat().await;
+
+        // step 1: reply false if term < current_term
         let (term_ok, current_term) = self
             .core
             .term_store
             .check_term_and_reply(rpc_arguments.term)
             .await;
 
-        // step 1: reply false if term < current_term
         if !term_ok {
             return deny_vote_request(current_term);
         }
 
         // step 2: if voted_for is none or candidate_id,
         // and candidates log is at least as up to date as receivers log, grant vote
-
         let voted_for = self.core.initiator.get_voted_for().await; // todo candidate id needs to be reset in the beginning of a new term (triggered by term store? or by state change)
         let last_log_index = self.core.log_store.get_last_log_index().await;
 

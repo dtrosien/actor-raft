@@ -96,7 +96,7 @@ async fn create_actors(
 
 #[derive(Clone, Debug)]
 pub struct CoreHandles {
-    // todo make attributes private when it is clear which funcs aare needed in server
+    // todo make attributes private when it is clear which funcs are needed in server
     pub timer: TimerHandle,
     pub term_store: TermStoreHandle,
     // pub counter: CounterHandle, todo is initialized in Initiator, maybe better here?
@@ -116,7 +116,7 @@ impl CoreHandles {
         state_meta: ReplicatorStateMeta,
         vote_db_path: String,
     ) -> Self {
-        let timeout = Duration::from_millis(2);
+        let timeout = Duration::from_millis(20);
         let timer = TimerHandle::new(watch_dog.clone(), timeout);
         let initiator =
             InitiatorHandle::new(term_store.clone(), watch_dog, config.clone(), vote_db_path);
