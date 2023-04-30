@@ -254,6 +254,7 @@ fn calculate_required_votes(nodes_num: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::get_test_config;
     use crate::db::test_utils::get_test_db_paths;
     use crate::rpc::test_utils::{start_test_server, TestServerTrue};
     use std::time::Duration;
@@ -263,7 +264,7 @@ mod tests {
         let watchdog = WatchdogHandle::default();
         let mut test_db_paths = get_test_db_paths(2).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
-        let config = Config::new();
+        let config = get_test_config().await;
         let initiator =
             InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap());
         initiator.reset_voted_for().await;
@@ -281,7 +282,7 @@ mod tests {
         let watchdog = WatchdogHandle::default();
         let mut test_db_paths = get_test_db_paths(2).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
-        let config = Config::for_test().await;
+        let config = get_test_config().await;
         let initiator =
             InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap());
 
@@ -304,7 +305,7 @@ mod tests {
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         term_store.reset_term().await;
 
-        let config = Config::for_test().await;
+        let config = get_test_config().await;
         let initiator = InitiatorHandle::new(
             term_store,
             watchdog.clone(),

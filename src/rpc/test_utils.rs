@@ -12,8 +12,10 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 // global var used to offer unique ports for each rpc call in unit tests starting from port number 50060
+#[cfg(test)]
 static GLOBAL_PORT_COUNTER: Lazy<Mutex<u16>> = Lazy::new(|| Mutex::new(50060));
 // get port from GLOBAL_PORT_COUNTER
+#[cfg(test)]
 pub async fn get_test_port() -> u16 {
     let mut i = GLOBAL_PORT_COUNTER.lock().await;
     *i += 1;
@@ -23,6 +25,7 @@ pub async fn get_test_port() -> u16 {
 // wrapper for rpc requests, delays request to give tonic server time to start
 // takes a async function as input
 // function needs to be inserted as a closure
+#[cfg(test)]
 pub async fn start_test_request<F, Fut>(f: F) -> Result<Reply, Box<dyn Error + Send + Sync>>
 where
     F: Fn() -> Fut,
@@ -35,7 +38,7 @@ where
 }
 
 // starts tonic test server for unit tests
-//todo: use once_cell also for test servers, to reduce server spawning?
+#[cfg(test)]
 pub async fn start_test_server<T: RaftRpc>(port: u16, rpc_test_case: T) {
     let raft_service = RaftRpcServer::new(rpc_test_case);
     let addr = format!("[::1]:{port}").parse().unwrap();
@@ -50,7 +53,9 @@ pub async fn start_test_server<T: RaftRpc>(port: u16, rpc_test_case: T) {
 // Test Servers/////////////////////////////////////////////////////////////////////////////////
 
 // used for test cases which require true as an answer
+#[cfg(test)]
 pub struct TestServerTrue {}
+#[cfg(test)]
 #[tonic::async_trait]
 impl RaftRpc for TestServerTrue {
     async fn append_entries(
@@ -77,7 +82,9 @@ impl RaftRpc for TestServerTrue {
 }
 
 // used for test cases which require false as an answer
+#[cfg(test)]
 pub struct TestServerFalse {}
+#[cfg(test)]
 #[tonic::async_trait]
 impl RaftRpc for TestServerFalse {
     async fn append_entries(

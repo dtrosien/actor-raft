@@ -146,7 +146,7 @@ mod tests {
     use crate::actors::log::test_utils::TestApp;
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
-    use crate::config::Config;
+    use crate::config::{get_test_config, Config};
     use crate::db::test_utils::get_test_db_paths;
     use crate::raft_rpc::append_entries_request::Entry;
 
@@ -167,9 +167,11 @@ mod tests {
             leader_id: 0,
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
+
+        let config = get_test_config().await;
         let core = CoreHandles::new(
             wd,
-            Config::for_test().await,
+            config,
             Box::new(TestApp {}),
             term_store,
             log_store,
@@ -318,9 +320,10 @@ mod tests {
             leader_id: 0,
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
+        let config = get_test_config().await;
         let core = CoreHandles::new(
             wd,
-            Config::for_test().await,
+            config,
             Box::new(TestApp {}),
             term_store,
             log_store,

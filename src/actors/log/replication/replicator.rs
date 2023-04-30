@@ -182,6 +182,7 @@ mod tests {
     use crate::actors::log::test_utils::TestApp;
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
+    use crate::config::get_test_config;
     use crate::db::test_utils::get_test_db_paths;
     use crate::rpc::test_utils::{start_test_server, TestServerFalse, TestServerTrue};
     use std::time::Duration;
@@ -296,7 +297,7 @@ mod tests {
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store.clone(), 1, app);
 
-        let config = Config::for_test().await;
+        let config = get_test_config().await;
 
         let state_meta = ReplicatorStateMeta {
             previous_log_index: 0,

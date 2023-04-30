@@ -34,8 +34,8 @@ enum TermMsg {
 
 impl TermStore {
     #[tracing::instrument(ret, level = "debug")]
-    fn new(receiver: mpsc::Receiver<TermMsg>, watchdog: WatchdogHandle, path: String) -> Self {
-        let db = RaftDb::new(path);
+    fn new(receiver: mpsc::Receiver<TermMsg>, watchdog: WatchdogHandle, db_path: String) -> Self {
+        let db = RaftDb::new(db_path);
         let current_term = db
             .read_current_term()
             .expect("term_store db seems to be corrupted")
@@ -130,9 +130,9 @@ pub struct TermStoreHandle {
 
 impl TermStoreHandle {
     #[tracing::instrument(ret, level = "debug")]
-    pub fn new(watchdog: WatchdogHandle, path: String) -> Self {
+    pub fn new(watchdog: WatchdogHandle, db_path: String) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut term_store = TermStore::new(receiver, watchdog, path);
+        let mut term_store = TermStore::new(receiver, watchdog, db_path);
         tokio::spawn(async move { term_store.run().await });
 
         Self { sender }
