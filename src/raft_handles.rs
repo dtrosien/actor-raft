@@ -3,17 +3,21 @@ use crate::actors::log::executor::{App, ExecutorHandle};
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::replicator::ReplicatorHandle;
 use crate::actors::log::replication::worker::ReplicatorStateMeta;
+use std::collections::VecDeque;
 
+use crate::actors::state_store::{ServerState, StateStoreHandle};
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::timer::TimerHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
+use crate::raft_rpc::append_entries_request::Entry;
 use rand::Rng;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct RaftHandles {
     // todo make attributes private when it is clear which funcs are needed in server
+    pub state_store: StateStoreHandle,
     pub state_timer: TimerHandle,
     pub election_timer: TimerHandle, // todo maybe not needed here
     pub term_store: TermStoreHandle,
@@ -26,6 +30,7 @@ pub struct RaftHandles {
 
 impl RaftHandles {
     pub fn build(
+        state_store: StateStoreHandle,
         watch_dog: WatchdogHandle,
         config: Config,
         app: Box<dyn App>,
@@ -56,6 +61,7 @@ impl RaftHandles {
         );
 
         Self {
+            state_store,
             state_timer,
             election_timer,
             term_store,
@@ -66,15 +72,34 @@ impl RaftHandles {
         }
     }
 
-    pub async fn send_heartbeat(&self) {
-        self.state_timer.send_heartbeat().await;
+    pub async fn register_heartbeat(&self) {
+        self.state_timer.register_heartbeat().await;
     }
 
-    pub async fn append_entries_api(&self) {
-        self.state_timer.send_heartbeat().await;
+    pub async fn append_entries_to_local_log(
+        &self,
+        entries: VecDeque<Entry>,
+    ) -> VecDeque<Option<u64>> {
+        self.log_store.append_entries(entries).await
     }
 
-    pub fn request_vote_api(&self) {}
+    // append only in only in leader state  // todo else send to leader
+    pub async fn append_entries(&self, entries: VecDeque<Entry>) {
+        if self.state_store.get_state().await == ServerState::Leader {
+            self.log_store.append_entries(entries.clone()).await;
+            for entry in entries {
+                self.replicator.add_to_batch(entry).await;
+            }
+            self.replicator.flush_batch().await;
+        }
+    }
+
+    // only in follower state
+    pub async fn request_votes(&self) {
+        if self.state_store.get_state().await == ServerState::Candidate {
+            self.initiator.start_election().await; // todo counter needs timeout
+        }
+    }
 }
 
 #[cfg(test)]
@@ -86,7 +111,8 @@ mod tests {
     #[tokio::test]
     async fn build_test() {
         let config = get_test_config().await;
-        let wd = WatchdogHandle::default();
+        let state_store = StateStoreHandle::new();
+        let wd = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(wd.clone(), config.term_db_path.clone());
         let log_store = LogStoreHandle::new(config.log_db_path.clone());
 
@@ -102,6 +128,7 @@ mod tests {
         };
 
         let _handles = RaftHandles::build(
+            state_store,
             wd,
             config,
             Box::new(TestApp {}),

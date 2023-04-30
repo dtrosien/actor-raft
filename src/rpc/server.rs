@@ -23,7 +23,7 @@ impl RaftRpc for RaftServer {
         let entries = VecDeque::from(rpc_arguments.entries);
 
         // reset timeout
-        self.handles.state_timer.send_heartbeat().await;
+        self.handles.state_timer.register_heartbeat().await;
 
         // step 1
         let (term_ok, current_term) = self
@@ -79,7 +79,7 @@ impl RaftRpc for RaftServer {
         let rpc_arguments = request.into_inner();
 
         // reset timeout
-        self.handles.state_timer.send_heartbeat().await;
+        self.handles.state_timer.register_heartbeat().await;
 
         // step 1: reply false if term < current_term
         let (term_ok, current_term) = self
@@ -143,6 +143,7 @@ mod tests {
     use crate::actors::log::log_store::LogStoreHandle;
     use crate::actors::log::replication::worker::ReplicatorStateMeta;
     use crate::actors::log::test_utils::TestApp;
+    use crate::actors::state_store::StateStoreHandle;
     use crate::actors::term_store::TermStoreHandle;
     use crate::actors::watchdog::WatchdogHandle;
     use crate::config::get_test_config;
@@ -152,7 +153,8 @@ mod tests {
     #[tokio::test]
     async fn append_entry_test() {
         let mut db_paths = get_test_db_paths(3).await;
-        let wd = WatchdogHandle::default();
+        let state_store = StateStoreHandle::new();
+        let wd = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
         let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
 
@@ -169,6 +171,7 @@ mod tests {
 
         let config = get_test_config().await;
         let handles = RaftHandles::build(
+            state_store,
             wd,
             config,
             Box::new(TestApp {}),
@@ -304,7 +307,8 @@ mod tests {
     #[tokio::test]
     async fn request_votes_test() {
         let mut db_paths = get_test_db_paths(3).await;
-        let wd = WatchdogHandle::default();
+        let state_store = StateStoreHandle::new();
+        let wd = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
         let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
 
@@ -320,6 +324,7 @@ mod tests {
         };
         let config = get_test_config().await;
         let handles = RaftHandles::build(
+            state_store,
             wd,
             config,
             Box::new(TestApp {}),

@@ -71,7 +71,7 @@ impl TimerHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    pub async fn send_heartbeat(&self) {
+    pub async fn register_heartbeat(&self) {
         let msg = TimerMsg::Heartbeat;
         let _ = self.sender.send(msg).await;
     }
@@ -90,7 +90,7 @@ mod tests {
         let timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(20));
         let mut signal = watchdog.get_exit_receiver().await;
         for n in 0..9 {
-            timer.send_heartbeat().await;
+            timer.register_heartbeat().await;
             tokio::select! {
             _ = signal.recv() => {panic!()},
             _ = tokio::time::sleep(Duration::from_millis(n))=> {}

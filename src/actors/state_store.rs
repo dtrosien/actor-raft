@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum ServerState {
     Leader,
     Follower,

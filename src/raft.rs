@@ -1,16 +1,11 @@
-use crate::actors::election::initiator::InitiatorHandle;
-use crate::actors::log::executor::{App, ExecutorHandle};
 use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::replication::replicator::ReplicatorHandle;
 use crate::actors::log::replication::worker::ReplicatorStateMeta;
 use crate::actors::log::test_utils::TestApp;
 use crate::actors::state_store::StateStoreHandle;
 use crate::actors::term_store::TermStoreHandle;
-use crate::actors::timer::TimerHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
 use crate::raft_handles::RaftHandles;
-use std::time::Duration;
 
 #[derive(Debug)]
 pub struct Raft {
@@ -24,19 +19,19 @@ impl Raft {
     pub async fn build(config: Config) -> Self {
         let state_store = StateStoreHandle::new();
         let watchdog = WatchdogHandle::new(state_store.clone());
-        let term_store = TermStoreHandle::new(watchdog.clone(), config.term_db_path);
-        let core = create_actors(
+        let term_store = TermStoreHandle::new(watchdog.clone(), config.term_db_path.clone());
+        let handles = create_actors(
+            config,
+            state_store.clone(),
             watchdog.clone(),
             term_store.clone(),
-            config.log_db_path,
-            config.vote_db_path,
         )
         .await;
         Raft {
             state_store,
             watchdog,
             term_store,
-            handles: core,
+            handles,
         }
     }
 
@@ -61,13 +56,12 @@ impl Raft {
 }
 
 async fn create_actors(
+    config: Config,
+    state_store: StateStoreHandle,
     watchdog: WatchdogHandle,
     term_store: TermStoreHandle,
-    log_db_path: String,
-    vote_db_path: String,
 ) -> RaftHandles {
-    let config = Config::default();
-    let log_store = LogStoreHandle::new(log_db_path);
+    let log_store = LogStoreHandle::new(config.log_db_path.clone());
     let previous_log_term = log_store.get_last_log_term().await;
     let previous_log_index = log_store.get_last_log_index().await;
     let term = term_store.get_term().await;
@@ -80,6 +74,7 @@ async fn create_actors(
     };
 
     RaftHandles::build(
+        state_store,
         watchdog,
         config,
         Box::new(TestApp {}),
@@ -87,9 +82,4 @@ async fn create_actors(
         log_store,
         state_meta,
     )
-    // match self.state {
-    //     State::Leader => ApiStruct {  },
-    //     State::Follower => ApiStruct {  },
-    //     State::Candidate => ApiStruct {  },
-    // }
 }
