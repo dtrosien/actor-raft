@@ -18,6 +18,7 @@ pub struct Raft {
 }
 
 impl Raft {
+    // todo implement with builder pattern
     pub async fn build(config: Config) -> Self {
         let state_store = StateStoreHandle::new();
         let watchdog = WatchdogHandle::new(state_store.clone());
@@ -42,12 +43,17 @@ impl Raft {
         self.handles.clone()
     }
 
+    // todo think again about if this is really working like that
     pub async fn run(&mut self) {
         let mut exit_state_r = self.watchdog.get_exit_receiver().await;
         println!("{:?}", self.state_store.get_state().await);
+
+        // will only be executed when candidate
         self.handles.request_votes().await;
 
         // todo more readable
+        // will be triggered if timed out in candidate or follower state,
+        // or when receiving higher term in leader state
         tokio::select! {
             _state_change = exit_state_r.recv() =>{},
             _leader = self.send_heartbeats() => {}
@@ -63,7 +69,7 @@ impl Raft {
         }
     }
 
-    pub async fn send_heartbeats(&self) {
+    async fn send_heartbeats(&self) {
         let hb_interval = Duration::from_millis(self.config.state_timeout / 2); // todo into config
         loop {
             self.handles.send_heartbeat().await;
