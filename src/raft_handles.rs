@@ -83,7 +83,31 @@ impl RaftHandles {
         self.log_store.append_entries(entries).await
     }
 
-    // append only in only in leader state  // todo else send to leader
+    // only possible in leader state because entry index must be correct
+    // todo there must be an mechanism to reset actors in case of a leader switch e.g. the next index needs to be adjusted after a follower becomes a leader
+    // todo this could maybe achieved via listening to the watch dog and call a clean up method when the shutdown msg was received
+    pub async fn create_entry(&self, payload: String) -> Option<Entry> {
+        if self.state_store.get_state().await != ServerState::Leader {
+            return None;
+        }
+        let index = self.log_store.get_and_increment_next_log_index().await;
+        let term = self.term_store.get_term().await;
+        Some(Entry {
+            index,
+            term,
+            payload,
+        })
+    }
+
+    // append only in leader state
+    pub async fn append_entry(&self, entry: Entry) {
+        if self.state_store.get_state().await == ServerState::Leader {
+            self.log_store.append_entry(entry.clone()).await;
+            self.replicator.replicate_entry(entry).await;
+        }
+    }
+
+    // append only in leader state  // todo else send to leader
     pub async fn append_entries(&self, entries: VecDeque<Entry>) {
         if self.state_store.get_state().await == ServerState::Leader {
             self.log_store.append_entries(entries.clone()).await;

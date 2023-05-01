@@ -10,8 +10,7 @@ struct LogStore {
     receiver: mpsc::Receiver<LogStoreMsg>,
     last_log_index: u64,
     last_log_term: u64,
-    // previous_log_index: u64, // todo remove since not necessary -> only confusing with last log entry
-    // previous_log_term: u64, // todo remove since not necessary -> only confusing with last log entry
+    next_log_index: u64,
     db: RaftDb,
 }
 
@@ -23,12 +22,9 @@ enum LogStoreMsg {
     GetLastLogTerm {
         respond_to: oneshot::Sender<u64>,
     },
-    // GetPreviousLogIndex {
-    //     respond_to: oneshot::Sender<u64>,
-    // },
-    // GetPreviousLogTerm {
-    //     respond_to: oneshot::Sender<u64>,
-    // },
+    GetAndIncrementNextLogIndex {
+        respond_to: oneshot::Sender<u64>,
+    },
     AppendEntry {
         respond_to: oneshot::Sender<Option<u64>>,
         entry: Entry,
@@ -63,14 +59,12 @@ impl LogStore {
     fn new(receiver: mpsc::Receiver<LogStoreMsg>, db_path: String) -> Self {
         let db = RaftDb::new(db_path);
         let (last_log_index, last_log_term) = unwrap_index_and_term(db.read_last_entry());
-        // let (previous_log_index, previous_log_term) =
-        //    unwrap_index_and_term(db.read_previous_entry(last_log_index));
+        let next_log_index = last_log_index + 1;
         LogStore {
             receiver,
             last_log_index,
             last_log_term,
-            //  previous_log_index,
-            //  previous_log_term,
+            next_log_index,
             db,
         }
     }
@@ -90,12 +84,9 @@ impl LogStore {
             LogStoreMsg::GetLastLogTerm { respond_to } => {
                 let _ = respond_to.send(self.last_log_term);
             }
-            // LogStoreMsg::GetPreviousLogIndex { respond_to } => {
-            //     let _ = respond_to.send(self.previous_log_index);
-            // }
-            // LogStoreMsg::GetPreviousLogTerm { respond_to } => {
-            //     let _ = respond_to.send(self.previous_log_term);
-            // }
+            LogStoreMsg::GetAndIncrementNextLogIndex { respond_to } => {
+                let _ = respond_to.send(self.get_and_increment_next_log_index().await);
+            }
             LogStoreMsg::AppendEntry { respond_to, entry } => {
                 let _ = respond_to.send(self.append_entry_and_flush(entry).await);
             }
@@ -153,15 +144,11 @@ impl LogStore {
     async fn append_entry(&mut self, entry: Entry) -> Option<u64> {
         let entry_term = entry.term;
         let entry_index = entry.index;
-        //update previous entry meta data
-        // self.previous_log_index = self.last_log_index;
-        // self.previous_log_term = self.last_log_term;
         //update latest entry meta data
         self.last_log_index = entry_index;
         self.last_log_term = entry_term;
 
         //write to db
-
         match self.db.store_entry(entry).await {
             Ok(result) => {
                 if let Some(old_entry) = result {
@@ -178,9 +165,6 @@ impl LogStore {
                             .delete_entries(entry_index + 1, last_index)
                             .await
                             .expect("Error when deleting wrong entries: must not happen");
-                        // correct previous entry meta data
-                        // (self.previous_log_index, self.previous_log_term) =
-                        //     unwrap_index_and_term(self.db.read_previous_entry(entry_index));
                     }
                 }
                 Some(entry_index)
@@ -220,10 +204,9 @@ impl LogStore {
             .clear_db()
             .await
             .expect("log_store db seems to be corrupted, delete manually");
-        // self.previous_log_term = 0;
-        // self.previous_log_index = 0;
         self.last_log_term = 0;
         self.last_log_index = 0;
+        self.next_log_index = 1;
         //todo trigger executor to reset commit?
     }
 
@@ -237,6 +220,12 @@ impl LogStore {
             None => false,
             Some(prev_entry) => prev_entry.term == term,
         }
+    }
+
+    async fn get_and_increment_next_log_index(&mut self) -> u64 {
+        let index = self.next_log_index;
+        self.next_log_index += 1;
+        index
     }
 }
 
@@ -354,21 +343,13 @@ impl LogStoreHandle {
         recv.await.expect("Actor task has been killed")
     }
 
-    // #[tracing::instrument(ret, level = "debug")]
-    // pub async fn get_previous_log_index(&self) -> u64 {
-    //     let (send, recv) = oneshot::channel();
-    //     let msg = LogStoreMsg::GetPreviousLogIndex { respond_to: send };
-    //     let _ = self.sender.send(msg).await;
-    //     recv.await.expect("Actor task has been killed")
-    // }
-    //
-    // #[tracing::instrument(ret, level = "debug")]
-    // pub async fn get_previous_log_term(&self) -> u64 {
-    //     let (send, recv) = oneshot::channel();
-    //     let msg = LogStoreMsg::GetPreviousLogTerm { respond_to: send };
-    //     let _ = self.sender.send(msg).await;
-    //     recv.await.expect("Actor task has been killed")
-    // }
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn get_and_increment_next_log_index(&self) -> u64 {
+        let (send, recv) = oneshot::channel();
+        let msg = LogStoreMsg::GetAndIncrementNextLogIndex { respond_to: send };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
 }
 
 #[cfg(test)]
@@ -445,21 +426,15 @@ mod tests {
         assert_eq!(log_store.get_last_log_term().await, 0);
     }
 
-    // #[tokio::test]
-    // async fn get_previous_log_index_test() {
-    //     let mut test_db_paths = get_test_db_paths(1).await;
-    //     let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
-    //     log_store.reset_log().await;
-    //     assert_eq!(log_store.get_previous_log_index().await, 0);
-    // }
-    //
-    // #[tokio::test]
-    // async fn get_previous_log_term_test() {
-    //     let mut test_db_paths = get_test_db_paths(1).await;
-    //     let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
-    //     log_store.reset_log().await;
-    //     assert_eq!(log_store.get_previous_log_term().await, 0);
-    // }
+    #[tokio::test]
+    async fn get_and_increment_next_log_index_test() {
+        let mut test_db_paths = get_test_db_paths(1).await;
+        let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
+        log_store.reset_log().await;
+        assert_eq!(log_store.get_and_increment_next_log_index().await, 1);
+        assert_eq!(log_store.get_and_increment_next_log_index().await, 2);
+        assert_eq!(log_store.get_and_increment_next_log_index().await, 3);
+    }
 
     #[tokio::test]
     async fn get_previous_entry_match_test() {
