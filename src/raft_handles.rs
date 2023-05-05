@@ -49,7 +49,7 @@ impl RaftHandles {
         //         .gen_range(config.election_timeout_range.0..config.election_timeout_range.1),
         // );
         //let election_timer = TimerHandle::new(watchdog.clone(), election_timeout);
-
+        // todo create counter here
         let initiator = InitiatorHandle::new(
             term_store.clone(),
             watchdog.clone(),

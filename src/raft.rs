@@ -56,8 +56,9 @@ impl Raft {
         match self.handles.state_store.get_state().await {
             ServerState::Leader => {
                 tokio::select! {
+                    // needs to be in select to make sure it is terminated when leader gets term error
                     _leader = self.send_heartbeats() => {info!("send hb");}
-                    _wait_for_timeout = exit_state_r.recv() =>{},
+                    _wait_for_timeout = exit_state_r.recv() =>{}, // todo no timeout only termerror for leader
 
                 }
             }
@@ -80,10 +81,13 @@ impl Raft {
         }
     }
 
+    // todo maybe only in handles
     async fn send_heartbeats(&self) {
         let hb_interval = Duration::from_millis(self.config.state_timeout / 2); // todo into config
         loop {
             self.handles.send_heartbeat().await;
+            // to prevent timeout leader must trigger his own timer
+            self.handles.state_timer.register_heartbeat().await; // todo maybe trigger this in client if possible
             tokio::time::sleep(hb_interval).await;
         }
     }
