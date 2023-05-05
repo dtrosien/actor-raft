@@ -1,12 +1,14 @@
 use crate::actors::watchdog::WatchdogHandle;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tracing::info;
 
 #[derive(Debug)]
 struct Timer {
     receiver: mpsc::Receiver<TimerMsg>,
     watchdog: WatchdogHandle,
     timeout: Duration,
+    run_once: bool,
 }
 
 #[derive(Debug)]
@@ -20,11 +22,13 @@ impl Timer {
         receiver: mpsc::Receiver<TimerMsg>,
         watchdog: WatchdogHandle,
         timeout: Duration,
+        run_once: bool,
     ) -> Self {
         Timer {
             receiver,
             watchdog,
             timeout,
+            run_once,
         }
     }
 
@@ -35,10 +39,9 @@ impl Timer {
             self.handle_message(msg);
             },
             _timeout = tokio::time::sleep(self.timeout)=> {
-                println!("timeout");
+                info!("timeout");
                self.watchdog.timeout().await;
-                    //todo break really needed?
-                    //break
+                 if self.run_once {break}
             }
             }
         }
@@ -63,11 +66,18 @@ impl TimerHandle {
     #[tracing::instrument(ret, level = "debug")]
     pub fn new(watchdog: WatchdogHandle, timeout: Duration) -> Self {
         let (sender, receiver) = mpsc::channel(1);
-        let mut timer = Timer::new(receiver, watchdog, timeout);
+        let mut timer = Timer::new(receiver, watchdog, timeout, false);
 
         tokio::spawn(async move { timer.run().await });
 
         Self { sender }
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub fn run_once(watchdog: WatchdogHandle, timeout: Duration) {
+        let (_sender, receiver) = mpsc::channel(1);
+        let mut timer = Timer::new(receiver, watchdog, timeout, true);
+        tokio::spawn(async move { timer.run().await });
     }
 
     #[tracing::instrument(ret, level = "debug")]
@@ -103,6 +113,18 @@ mod tests {
         // asserts if the shutdown signal is send from the watchdog after a timeout
         let watchdog = WatchdogHandle::default();
         let _timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(10));
+        let mut signal = watchdog.get_exit_receiver().await;
+        tokio::select! {
+        _ = signal.recv() => {},
+        _ = tokio::time::sleep(Duration::from_millis(20))=> {panic!()}
+        }
+    }
+
+    #[tokio::test]
+    async fn run_once_timeout_test() {
+        // asserts if the shutdown signal is send from the watchdog after a timeout
+        let watchdog = WatchdogHandle::default();
+        TimerHandle::run_once(watchdog.clone(), Duration::from_millis(10));
         let mut signal = watchdog.get_exit_receiver().await;
         tokio::select! {
         _ = signal.recv() => {},

@@ -2,9 +2,9 @@ extern crate core;
 
 mod actors;
 mod config;
-pub mod raft_handles;
 mod db;
 pub mod raft;
+pub mod raft_handles;
 mod rpc;
 
 mod raft_rpc {

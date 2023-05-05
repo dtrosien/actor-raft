@@ -1,12 +1,13 @@
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::worker::ReplicatorStateMeta;
 use crate::actors::log::test_utils::TestApp;
-use crate::actors::state_store::StateStoreHandle;
+use crate::actors::state_store::{ServerState, StateStoreHandle};
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
 use crate::raft_handles::RaftHandles;
 use std::time::Duration;
+use tracing::info;
 
 #[derive(Debug)]
 pub struct Raft {
@@ -45,21 +46,31 @@ impl Raft {
 
     // todo think again about if this is really working like that
     pub async fn run(&mut self) {
+        self.handles.state_timer.register_heartbeat().await;
         let mut exit_state_r = self.watchdog.get_exit_receiver().await;
-        println!("{:?}", self.state_store.get_state().await);
-
-        // will only be executed when candidate
-        self.handles.request_votes().await;
+        info!("{:?}", self.state_store.get_state().await);
 
         // todo more readable
         // will be triggered if timed out in candidate or follower state,
         // or when receiving higher term in leader state
-        tokio::select! {
-            _state_change = exit_state_r.recv() =>{},
-            _leader = self.send_heartbeats() => {}
+        match self.handles.state_store.get_state().await {
+            ServerState::Leader => {
+                tokio::select! {
+                    _leader = self.send_heartbeats() => {info!("send hb");}
+                    _wait_for_timeout = exit_state_r.recv() =>{},
+
+                }
+            }
+            ServerState::Follower => {
+                let _wait_for_timeout = exit_state_r.recv().await;
+            }
+            ServerState::Candidate => {
+                self.handles.request_votes().await;
+                let _wait_for_timeout = exit_state_r.recv().await;
+            }
         }
 
-        println!("{:?}", self.state_store.get_state().await);
+        info!("{:?}", self.state_store.get_state().await);
     }
 
     pub async fn run_continuously(&mut self) {
@@ -105,4 +116,20 @@ async fn create_actors(
         log_store,
         state_meta,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::actors::log::test_utils::TestApp;
+    use crate::config::get_test_config;
+
+    #[tokio::test]
+    async fn run_test() {
+        let config = get_test_config().await;
+
+        let mut raft = Raft::build(config).await;
+        raft.run().await;
+        raft.run().await;
+    }
 }

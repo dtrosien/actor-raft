@@ -33,8 +33,8 @@ impl Default for Config {
             term_db_path: "databases/term-db".to_string(),
             vote_db_path: "databases/vote-db".to_string(),
             channel_capacity: 20,
-            state_timeout: 20,
-            election_timeout_range: (5, 30),
+            state_timeout: 500,
+            election_timeout_range: (100, 300),
             initial_state: ServerState::Follower,
             nodes: vec![],
         }
@@ -69,9 +69,9 @@ pub async fn get_test_config() -> Config {
         log_db_path: db_paths.pop().unwrap(),
         term_db_path: db_paths.pop().unwrap(),
         vote_db_path: db_paths.pop().unwrap(),
-        channel_capacity: 8,
-        state_timeout: 20,
-        election_timeout_range: (10, 30),
+        channel_capacity: 20,
+        state_timeout: 500,
+        election_timeout_range: (100, 300),
         initial_state: ServerState::Follower,
         nodes,
     }

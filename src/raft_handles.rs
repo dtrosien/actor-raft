@@ -13,25 +13,28 @@ use crate::config::Config;
 use crate::raft_rpc::append_entries_request::Entry;
 use rand::Rng;
 use std::time::Duration;
+use tracing::info;
 
 #[derive(Clone, Debug)]
 pub struct RaftHandles {
     // todo make attributes private when it is clear which funcs are needed in server
     pub state_store: StateStoreHandle,
     pub state_timer: TimerHandle,
-    pub election_timer: TimerHandle, // todo maybe not needed here
+    //pub election_timer: TimerHandle, // todo maybe not needed here
     pub term_store: TermStoreHandle,
     // pub counter: CounterHandle, todo is initialized in Initiator, maybe better here?
     pub initiator: InitiatorHandle,
     pub log_store: LogStoreHandle,
     pub executor: ExecutorHandle,
     pub replicator: ReplicatorHandle,
+    pub watchdog: WatchdogHandle,
+    config: Config, // todo possible to get rid of here if election timer is handled differently?
 }
 
 impl RaftHandles {
     pub fn build(
         state_store: StateStoreHandle,
-        watch_dog: WatchdogHandle,
+        watchdog: WatchdogHandle,
         config: Config,
         app: Box<dyn App>,
         term_store: TermStoreHandle,
@@ -39,15 +42,17 @@ impl RaftHandles {
         state_meta: ReplicatorStateMeta,
     ) -> Self {
         let state_timeout = Duration::from_millis(config.state_timeout);
-        let election_timeout = Duration::from_millis(
-            rand::thread_rng()
-                .gen_range(config.election_timeout_range.0..config.election_timeout_range.1),
-        );
-        let state_timer = TimerHandle::new(watch_dog.clone(), state_timeout);
-        let election_timer = TimerHandle::new(watch_dog.clone(), election_timeout);
+        let state_timer = TimerHandle::new(watchdog.clone(), state_timeout);
+
+        // let election_timeout = Duration::from_millis(
+        //     rand::thread_rng()
+        //         .gen_range(config.election_timeout_range.0..config.election_timeout_range.1),
+        // );
+        //let election_timer = TimerHandle::new(watchdog.clone(), election_timeout);
+
         let initiator = InitiatorHandle::new(
             term_store.clone(),
-            watch_dog,
+            watchdog.clone(),
             config.clone(),
             config.vote_db_path.clone(),
         );
@@ -56,19 +61,21 @@ impl RaftHandles {
             executor.clone(),
             term_store.clone(),
             log_store.clone(),
-            config,
+            config.clone(),
             state_meta,
         );
 
         Self {
             state_store,
             state_timer,
-            election_timer,
+            //   election_timer,
             term_store,
             initiator,
             log_store,
             executor,
             replicator,
+            watchdog,
+            config,
         }
     }
 
@@ -128,9 +135,13 @@ impl RaftHandles {
     // only in follower state
     pub async fn request_votes(&self) {
         if self.state_store.get_state().await == ServerState::Candidate {
-            // todo counter needs timeout
-            // todo voted for must be initialized after term change
+            // todo voted for must be initialized after term change -> listen to termerror
+            info!("start election");
             self.initiator.start_election().await;
+            let election_timeout = Duration::from_millis(rand::thread_rng().gen_range(
+                self.config.election_timeout_range.0..self.config.election_timeout_range.1,
+            ));
+            TimerHandle::run_once(self.watchdog.clone(), election_timeout);
         }
     }
 }
