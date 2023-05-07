@@ -1,7 +1,7 @@
 use crate::actors::election::counter::CounterHandle;
 use crate::actors::election::worker::WorkerHandle;
 use crate::actors::term_store::TermStoreHandle;
-use crate::config::{Config, Node};
+use crate::config::Config;
 use crate::db::raft_db::RaftDb;
 use crate::raft_rpc::RequestVoteRequest;
 use crate::state_meta::StateMeta;
