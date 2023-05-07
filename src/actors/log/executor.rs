@@ -1,6 +1,7 @@
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::raft_rpc::append_entries_request::Entry;
 
+use crate::state_meta::StateMeta;
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
@@ -58,6 +59,10 @@ enum ExecutorMsg {
     },
     SetNumWorkers {
         num: u64,
+    },
+    SetStateMeta {
+        respond_to: oneshot::Sender<()>,
+        state_meta: StateMeta,
     },
 }
 
@@ -117,6 +122,15 @@ impl Executor {
                 let _ = respond_to.send(self.num_workers);
             }
             ExecutorMsg::SetNumWorkers { num } => self.num_workers = num,
+            ExecutorMsg::SetStateMeta {
+                respond_to,
+                state_meta,
+            } => {
+                let _ = {
+                    self.current_term = state_meta.term;
+                    respond_to.send(())
+                };
+            }
         }
     }
 
@@ -264,6 +278,17 @@ impl ExecutorHandle {
         let (send, recv) = oneshot::channel();
         let msg = ExecutorMsg::GetNumWorkers { respond_to: send };
 
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn set_state_meta(&self, state_meta: StateMeta) {
+        let (send, recv) = oneshot::channel();
+        let msg = ExecutorMsg::SetStateMeta {
+            respond_to: send,
+            state_meta,
+        };
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }

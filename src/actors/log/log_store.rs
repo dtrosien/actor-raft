@@ -147,7 +147,7 @@ impl LogStore {
         //update latest entry meta data
         self.last_log_index = entry_index;
         self.last_log_term = entry_term;
-
+        self.next_log_index = entry_index + 1;
         //write to db
         match self.db.store_entry(entry).await {
             Ok(result) => {

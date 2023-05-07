@@ -1,11 +1,11 @@
 use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::replication::worker::ReplicatorStateMeta;
 use crate::actors::log::test_utils::TestApp;
 use crate::actors::state_store::{ServerState, StateStoreHandle};
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
 use crate::raft_handles::RaftHandles;
+use crate::state_meta::StateMeta;
 use std::time::Duration;
 use tracing::info;
 
@@ -67,7 +67,8 @@ impl Raft {
         }
         // exit current state when triggeren by watchdog
         let _switch_state_trigger = exit_state_r.recv().await;
-        // todo trigger actor cleanup tasks
+
+        self.handles.reset_actor_states().await;
         info!(
             "Terminate current state. Next state: {:?}",
             self.state_store.get_state().await
@@ -112,16 +113,7 @@ async fn create_actors(
     term_store: TermStoreHandle,
 ) -> RaftHandles {
     let log_store = LogStoreHandle::new(config.log_db_path.clone());
-    let previous_log_term = log_store.get_last_log_term().await;
-    let previous_log_index = log_store.get_last_log_index().await;
-    let term = term_store.get_term().await;
-    let state_meta = ReplicatorStateMeta {
-        previous_log_index,
-        previous_log_term,
-        term,
-        leader_id: config.id,
-        leader_commit: 0,
-    };
+    let state_meta = StateMeta::build(config.id, log_store.clone(), term_store.clone()).await;
 
     RaftHandles::build(
         state_store,

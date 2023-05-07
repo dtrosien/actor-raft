@@ -5,6 +5,7 @@ use crate::actors::watchdog::WatchdogHandle;
 use crate::config::{Config, Node};
 use crate::db::raft_db::RaftDb;
 use crate::raft_rpc::RequestVoteRequest;
+use crate::state_meta::StateMeta;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
@@ -37,6 +38,7 @@ enum InitiatorMsg {
         respond_to: oneshot::Sender<CounterHandle>,
     },
     SetLastLogMeta {
+        respond_to: oneshot::Sender<()>,
         last_log_index: u64,
         last_log_term: u64,
     },
@@ -53,6 +55,7 @@ impl Initiator {
         term: TermStoreHandle,
         watchdog: WatchdogHandle,
         config: Config,
+        state_meta: StateMeta,
         path: String,
     ) -> Self {
         let db = RaftDb::new(path);
@@ -80,8 +83,8 @@ impl Initiator {
             db,
             voted_for,
             id,
-            last_log_index: 0,
-            last_log_term: 0,
+            last_log_index: state_meta.previous_log_index,
+            last_log_term: state_meta.previous_log_term,
         }
     }
 
@@ -106,9 +109,15 @@ impl Initiator {
                 let _ = respond_to.send(self.counter.clone());
             }
             InitiatorMsg::SetLastLogMeta {
+                respond_to,
                 last_log_index,
                 last_log_term,
-            } => self.set_last_log_meta(last_log_index, last_log_term),
+            } => {
+                let _ = {
+                    self.set_last_log_meta(last_log_index, last_log_term).await;
+                    respond_to.send(())
+                };
+            }
             InitiatorMsg::StartElection => self.start_election().await,
             InitiatorMsg::ResetVotedFor { respond_to } => {
                 let _ = {
@@ -141,7 +150,7 @@ impl Initiator {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    fn set_last_log_meta(&mut self, last_log_index: u64, last_log_term: u64) {
+    async fn set_last_log_meta(&mut self, last_log_index: u64, last_log_term: u64) {
         self.last_log_index = last_log_index;
         self.last_log_term = last_log_term;
     }
@@ -181,10 +190,11 @@ impl InitiatorHandle {
         term: TermStoreHandle,
         watchdog: WatchdogHandle,
         config: Config,
+        state_meta: StateMeta,
         db_path: String,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut initiator = Initiator::new(receiver, term, watchdog, config, db_path);
+        let mut initiator = Initiator::new(receiver, term, watchdog, config, state_meta, db_path);
         tokio::spawn(async move { initiator.run().await });
 
         Self { sender }
@@ -239,6 +249,18 @@ impl InitiatorHandle {
         let msg = InitiatorMsg::SetVotedFor { voted_for };
         let _ = self.sender.send(msg).await;
     }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn set_last_log_meta(&self, last_log_index: u64, last_log_term: u64) {
+        let (send, recv) = oneshot::channel();
+        let msg = InitiatorMsg::SetLastLogMeta {
+            respond_to: send,
+            last_log_index,
+            last_log_term,
+        };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
 }
 
 //exclude candidate (-> insert only number of other nodes)
@@ -265,8 +287,20 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(2).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = get_test_config().await;
-        let initiator =
-            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap());
+        let state_meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 0,
+            term: 0,
+            id: 0,
+            leader_commit: 0,
+        };
+        let initiator = InitiatorHandle::new(
+            term_store,
+            watchdog,
+            config,
+            state_meta,
+            test_db_paths.pop().unwrap(),
+        );
         initiator.reset_voted_for().await;
 
         assert_eq!(initiator.get_voted_for().await, None);
@@ -283,8 +317,21 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(2).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = get_test_config().await;
-        let initiator =
-            InitiatorHandle::new(term_store, watchdog, config, test_db_paths.pop().unwrap());
+
+        let state_meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 0,
+            term: 0,
+            id: 0,
+            leader_commit: 0,
+        };
+        let initiator = InitiatorHandle::new(
+            term_store,
+            watchdog,
+            config,
+            state_meta,
+            test_db_paths.pop().unwrap(),
+        );
 
         assert_eq!(
             initiator
@@ -306,10 +353,18 @@ mod tests {
         term_store.reset_term().await;
 
         let config = get_test_config().await;
+        let state_meta = StateMeta {
+            previous_log_index: 0,
+            previous_log_term: 0,
+            term: 0,
+            id: 0,
+            leader_commit: 0,
+        };
         let initiator = InitiatorHandle::new(
             term_store,
-            watchdog.clone(),
+            watchdog,
             config.clone(),
+            state_meta,
             test_db_paths.pop().unwrap(),
         );
         let counter = initiator.get_counter().await;

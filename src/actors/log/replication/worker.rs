@@ -8,6 +8,7 @@ use crate::rpc::client;
 
 use std::collections::VecDeque;
 
+use crate::state_meta::StateMeta;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]
@@ -18,7 +19,7 @@ struct Worker {
     executor: ExecutorHandle,
     node: Node,
     uri: String,
-    state_meta: ReplicatorStateMeta,
+    state_meta: StateMeta,
     entries_cache: VecDeque<Entry>,
 }
 
@@ -28,7 +29,7 @@ enum WorkerMsg {
         respond_to: oneshot::Sender<Node>,
     },
     GetStateMeta {
-        respond_to: oneshot::Sender<ReplicatorStateMeta>,
+        respond_to: oneshot::Sender<StateMeta>,
     },
     GetCachedEntries {
         respond_to: oneshot::Sender<VecDeque<Entry>>,
@@ -40,6 +41,10 @@ enum WorkerMsg {
         entry: Entry,
     },
     FlushReplicationBatch,
+    SetStateMeta {
+        respond_to: oneshot::Sender<()>,
+        state_meta: StateMeta,
+    },
 }
 
 impl Worker {
@@ -50,7 +55,7 @@ impl Worker {
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
         node: Node,
-        state_meta: ReplicatorStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let ip = node.ip.clone();
         let port = node.port;
@@ -90,6 +95,15 @@ impl Worker {
                 self.add_to_replication_batch(entry).await
             }
             WorkerMsg::FlushReplicationBatch => self.flush_replication_batch().await,
+            WorkerMsg::SetStateMeta {
+                respond_to,
+                state_meta,
+            } => {
+                let _ = {
+                    self.state_meta = state_meta;
+                    respond_to.send(())
+                };
+            }
         }
     }
 
@@ -185,7 +199,7 @@ impl Worker {
     async fn build_append_request(&self) -> AppendEntriesRequest {
         AppendEntriesRequest {
             term: self.state_meta.term,
-            leader_id: self.state_meta.leader_id,
+            leader_id: self.state_meta.id,
             prev_log_index: self.state_meta.previous_log_index,
             prev_log_term: self.state_meta.previous_log_term,
             entries: Vec::from(self.entries_cache.clone()),
@@ -206,7 +220,7 @@ impl WorkerHandle {
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
         node: Node,
-        state_meta: ReplicatorStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Worker::new(receiver, term_store, log_store, executor, node, state_meta);
@@ -225,7 +239,7 @@ impl WorkerHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    async fn get_state_meta(&self) -> ReplicatorStateMeta {
+    async fn get_state_meta(&self) -> StateMeta {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetStateMeta { respond_to: send };
 
@@ -259,26 +273,16 @@ impl WorkerHandle {
         let msg = WorkerMsg::FlushReplicationBatch;
         let _ = self.sender.send(msg).await;
     }
-}
 
-#[derive(Clone, Debug)]
-pub struct ReplicatorStateMeta {
-    pub previous_log_index: u64,
-    pub previous_log_term: u64,
-    pub term: u64,
-    pub leader_id: u64,
-    pub leader_commit: u64,
-}
-
-impl ReplicatorStateMeta {
-    pub fn new(term: u64) -> Self {
-        ReplicatorStateMeta {
-            previous_log_index: 0,
-            previous_log_term: 0,
-            term,
-            leader_id: 0,
-            leader_commit: 0,
-        }
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn set_state_meta(&self, state_meta: StateMeta) {
+        let (send, recv) = oneshot::channel();
+        let msg = WorkerMsg::SetStateMeta {
+            respond_to: send,
+            state_meta,
+        };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
     }
 }
 
@@ -291,6 +295,7 @@ mod tests {
     use crate::rpc::test_utils::{
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
+    use crate::state_meta::StateMeta;
     use std::time::Duration;
     use tokio::sync::broadcast;
 
@@ -300,11 +305,11 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = ReplicatorStateMeta {
+        let meta = StateMeta {
             previous_log_index: 0,
             previous_log_term: 1,
             term: 1,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0,
         };
 
@@ -320,11 +325,11 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = ReplicatorStateMeta {
+        let meta = StateMeta {
             previous_log_index: 0,
             previous_log_term: 1,
             term: 1,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0,
         };
 
@@ -371,11 +376,11 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = ReplicatorStateMeta {
+        let meta = StateMeta {
             previous_log_index: 0,
             previous_log_term: 1,
             term: 1,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0,
         };
 
@@ -429,11 +434,11 @@ mod tests {
             prepare_test_dependencies().await;
 
         // initialize state
-        let meta = ReplicatorStateMeta {
+        let meta = StateMeta {
             previous_log_index: 10,
             previous_log_term: 1,
             term: 1,
-            leader_id: 0,
+            id: 0,
             leader_commit: 10,
         };
 

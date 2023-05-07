@@ -13,6 +13,7 @@ struct Counter {
 enum CounterMsg {
     RegisterVote { vote: Option<bool> },
     GetVotesReceived { respond_to: oneshot::Sender<u64> },
+    ResetVotesReceived { respond_to: oneshot::Sender<()> },
 }
 
 impl Counter {
@@ -42,6 +43,12 @@ impl Counter {
             CounterMsg::RegisterVote { vote } => self.register_vote(vote).await,
             CounterMsg::GetVotesReceived { respond_to } => {
                 let _ = respond_to.send(self.votes_received);
+            }
+            CounterMsg::ResetVotesReceived { respond_to } => {
+                let _ = {
+                    self.votes_received = 0;
+                    respond_to.send(())
+                };
             }
         }
     }
@@ -93,6 +100,15 @@ impl CounterHandle {
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn reset_votes_received(&self) {
+        let (send, recv) = oneshot::channel();
+        let msg = CounterMsg::ResetVotesReceived { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
 }
 
 #[cfg(test)]
@@ -110,6 +126,22 @@ mod tests {
         assert_eq!(counter.get_votes_received().await, 0);
         counter.register_vote(vote).await;
         assert_eq!(counter.get_votes_received().await, 1);
+    }
+
+    #[tokio::test]
+    async fn reset_votes_received_test() {
+        let watchdog = WatchdogHandle::default();
+        let votes_required: u64 = 3;
+        let counter = CounterHandle::new(watchdog, votes_required);
+        let vote = Some(true);
+
+        assert_eq!(counter.get_votes_received().await, 0);
+        counter.register_vote(vote).await;
+        counter.register_vote(vote).await;
+        assert_eq!(counter.get_votes_received().await, 2);
+
+        counter.reset_votes_received().await;
+        assert_eq!(counter.get_votes_received().await, 0);
     }
 
     #[tokio::test]

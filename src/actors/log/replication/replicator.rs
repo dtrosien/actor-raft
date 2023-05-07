@@ -1,10 +1,11 @@
 use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::replication::worker::{ReplicatorStateMeta, WorkerHandle};
+use crate::actors::log::replication::worker::WorkerHandle;
 use crate::actors::term_store::TermStoreHandle;
 
 use crate::config::Config;
 use crate::raft_rpc::append_entries_request::Entry;
+use crate::state_meta::StateMeta;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
@@ -18,24 +19,35 @@ struct Replicator {
 
 #[derive(Debug)]
 enum ReplicatorMsg {
-    SetTerm { term: u64 },
-    GetTerm { respond_to: oneshot::Sender<u64> },
-    ReplicateEntry { entry: Entry },
-    AddToBatch { entry: Entry },
+    SetTerm {
+        term: u64,
+    },
+    GetTerm {
+        respond_to: oneshot::Sender<u64>,
+    },
+    ReplicateEntry {
+        entry: Entry,
+    },
+    AddToBatch {
+        entry: Entry,
+    },
     FlushBatch,
     RegisterWorkers,
+    SetStateMeta {
+        respond_to: oneshot::Sender<()>,
+        state_meta: StateMeta,
+    },
 }
 
 impl Replicator {
     #[tracing::instrument(ret, level = "debug")]
     fn new(
-        //todo check if it is better to get init values from Handles and make new() async
         receiver: mpsc::Receiver<ReplicatorMsg>,
         executor: ExecutorHandle,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        state_meta: ReplicatorStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let workers = config
             .nodes
@@ -79,6 +91,16 @@ impl Replicator {
             ReplicatorMsg::AddToBatch { entry } => self.add_to_batch(entry).await,
             ReplicatorMsg::FlushBatch => self.flush_batch().await,
             ReplicatorMsg::RegisterWorkers => self.register_workers_at_executor().await,
+            ReplicatorMsg::SetStateMeta {
+                respond_to,
+                state_meta,
+            } => {
+                let _ = {
+                    self.term = state_meta.term;
+                    self.set_workers_state_meta(state_meta).await;
+                    respond_to.send(())
+                };
+            }
         }
     }
 
@@ -110,6 +132,13 @@ impl Replicator {
             self.executor.register_worker(*worker).await;
         }
     }
+
+    #[tracing::instrument(ret, level = "debug")]
+    async fn set_workers_state_meta(&self, state_meta: StateMeta) {
+        for worker in self.workers.values() {
+            worker.set_state_meta(state_meta.clone()).await;
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -124,7 +153,7 @@ impl ReplicatorHandle {
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         config: Config,
-        state_meta: ReplicatorStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Replicator::new(
@@ -173,6 +202,17 @@ impl ReplicatorHandle {
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn set_state_meta(&self, state_meta: StateMeta) {
+        let (send, recv) = oneshot::channel();
+        let msg = ReplicatorMsg::SetStateMeta {
+            respond_to: send,
+            state_meta,
+        };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
 }
 
 #[cfg(test)]
@@ -192,11 +232,11 @@ mod tests {
     async fn term_test() {
         let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
             prepare_test_dependencies().await;
-        let state_meta = ReplicatorStateMeta {
+        let state_meta = StateMeta {
             previous_log_index: 0,
             previous_log_term: 0,
             term: 0,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0,
         };
 
@@ -277,7 +317,7 @@ mod tests {
 
     async fn prepare_test_dependencies() -> (
         Config,
-        ReplicatorStateMeta,
+        StateMeta,
         ReplicatorHandle,
         LogStoreHandle,
         ExecutorHandle,
@@ -299,11 +339,11 @@ mod tests {
 
         let config = get_test_config().await;
 
-        let state_meta = ReplicatorStateMeta {
+        let state_meta = StateMeta {
             previous_log_index: 0,
             previous_log_term: 0,
             term: 1,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0,
         };
 

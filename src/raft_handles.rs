@@ -2,7 +2,6 @@ use crate::actors::election::initiator::InitiatorHandle;
 use crate::actors::log::executor::{App, ExecutorHandle};
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::replicator::ReplicatorHandle;
-use crate::actors::log::replication::worker::ReplicatorStateMeta;
 use std::collections::VecDeque;
 
 use crate::actors::state_store::{ServerState, StateStoreHandle};
@@ -11,6 +10,7 @@ use crate::actors::timer::TimerHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
 use crate::raft_rpc::append_entries_request::Entry;
+use crate::state_meta::StateMeta;
 use rand::Rng;
 use std::time::Duration;
 use tracing::info;
@@ -39,7 +39,7 @@ impl RaftHandles {
         app: Box<dyn App>,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
-        state_meta: ReplicatorStateMeta,
+        state_meta: StateMeta,
     ) -> Self {
         let state_timeout = Duration::from_millis(config.state_timeout);
         let state_timer = TimerHandle::new(watchdog.clone(), state_timeout);
@@ -54,6 +54,7 @@ impl RaftHandles {
             term_store.clone(),
             watchdog.clone(),
             config.clone(),
+            state_meta.clone(),
             config.vote_db_path.clone(),
         );
         let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, app);
@@ -68,7 +69,6 @@ impl RaftHandles {
         Self {
             state_store,
             state_timer,
-            //   election_timer,
             term_store,
             initiator,
             log_store,
@@ -92,7 +92,6 @@ impl RaftHandles {
 
     // only possible in leader state because entry index must be correct
     // todo there must be an mechanism to reset actors in case of a leader switch e.g. the next index needs to be adjusted after a follower becomes a leader
-    // todo this could maybe achieved via listening to the watch dog and call a clean up method when the shutdown msg was received
     pub async fn create_entry(&self, payload: String) -> Option<Entry> {
         if self.state_store.get_state().await != ServerState::Leader {
             return None;
@@ -135,7 +134,6 @@ impl RaftHandles {
     // only in follower state
     pub async fn request_votes(&self) {
         if self.state_store.get_state().await == ServerState::Candidate {
-            // todo voted for must be initialized after term change -> listen to termerror
             info!("start election");
             self.initiator.start_election().await;
             let election_timeout = Duration::from_millis(rand::thread_rng().gen_range(
@@ -143,6 +141,27 @@ impl RaftHandles {
             ));
             TimerHandle::run_once(self.watchdog.clone(), election_timeout);
         }
+    }
+
+    // todo unit test (also in actors)
+    pub async fn reset_actor_states(&self) {
+        let state_meta = StateMeta::build(
+            self.config.id,
+            self.log_store.clone(),
+            self.term_store.clone(),
+        )
+        .await;
+
+        self.initiator.reset_voted_for().await;
+        self.initiator
+            .set_last_log_meta(state_meta.previous_log_index, state_meta.previous_log_term)
+            .await;
+
+        // todo counter reset votes
+
+        self.replicator.set_state_meta(state_meta.clone()).await;
+
+        self.executor.set_state_meta(state_meta.clone()).await;
     }
 }
 
@@ -163,11 +182,11 @@ mod tests {
         let previous_log_term = log_store.get_last_log_term().await;
         let previous_log_index = log_store.get_last_log_index().await;
 
-        let state_meta = ReplicatorStateMeta {
+        let state_meta = StateMeta {
             previous_log_index,
             previous_log_term,
             term: 0,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
 

@@ -141,7 +141,6 @@ fn deny_vote_request(term: u64) -> Result<Response<RequestVoteReply>, Status> {
 mod tests {
     use super::*;
     use crate::actors::log::log_store::LogStoreHandle;
-    use crate::actors::log::replication::worker::ReplicatorStateMeta;
     use crate::actors::log::test_utils::TestApp;
     use crate::actors::state_store::StateStoreHandle;
     use crate::actors::term_store::TermStoreHandle;
@@ -149,6 +148,7 @@ mod tests {
     use crate::config::get_test_config;
     use crate::db::test_utils::get_test_db_paths;
     use crate::raft_rpc::append_entries_request::Entry;
+    use crate::state_meta::StateMeta;
 
     #[tokio::test]
     async fn append_entry_test() {
@@ -161,11 +161,11 @@ mod tests {
         log_store.reset_log().await;
         term_store.reset_term().await;
 
-        let state_meta = ReplicatorStateMeta {
-            previous_log_index: 0, // only matters for replicator
-            previous_log_term: 0,  //only matters for replicator
+        let state_meta = StateMeta {
+            previous_log_index: 0, // only matters for replicator and voter
+            previous_log_term: 0,  //only matters for replicator and voter
             term: 0,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
 
@@ -315,11 +315,11 @@ mod tests {
         log_store.reset_log().await;
         term_store.reset_term().await;
 
-        let state_meta = ReplicatorStateMeta {
+        let state_meta = StateMeta {
             previous_log_index: 0, // only matters for replicator
             previous_log_term: 0,  // only matters for replicator
             term: 0,
-            leader_id: 0,
+            id: 0,
             leader_commit: 0, // todo why couldnt this be set to zero inside actor
         };
         let config = get_test_config().await;
