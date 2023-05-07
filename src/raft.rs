@@ -16,6 +16,7 @@ pub struct Raft {
     term_store: TermStoreHandle,
     handles: RaftHandles,
     config: Config,
+    shutdown: bool, // todo with shutdown hook channel like in tonic?
 }
 
 impl Raft {
@@ -37,6 +38,7 @@ impl Raft {
             term_store,
             handles,
             config,
+            shutdown: false,
         }
     }
 
@@ -44,51 +46,57 @@ impl Raft {
         self.handles.clone()
     }
 
-    // todo think again about if this is really working like that
     pub async fn run(&mut self) {
+        // reset timer
         self.handles.state_timer.register_heartbeat().await;
+        // register at watchdog to get notified when timeouts or term errors occurred
         let mut exit_state_r = self.watchdog.get_exit_receiver().await;
-        info!("{:?}", self.state_store.get_state().await);
 
-        // todo more readable
-        // will be triggered if timed out in candidate or follower state,
-        // or when receiving higher term in leader state
         match self.handles.state_store.get_state().await {
             ServerState::Leader => {
-                tokio::select! {
-                    // needs to be in select to make sure it is terminated when leader gets term error
-                    _leader = self.send_heartbeats() => {info!("send hb");}
-                    _wait_for_timeout = exit_state_r.recv() =>{}, // todo no timeout only termerror for leader
-
-                }
-            }
-            ServerState::Follower => {
-                let _wait_for_timeout = exit_state_r.recv().await;
+                info!("Run as Leader: start sending heartbeats");
+                self.send_heartbeats().await;
             }
             ServerState::Candidate => {
+                info!("Run as Candidate: start requesting votes");
                 self.handles.request_votes().await;
-                let _wait_for_timeout = exit_state_r.recv().await;
+            }
+            ServerState::Follower => {
+                info!("Run as Follower: start waiting for leader messages");
             }
         }
-
-        info!("{:?}", self.state_store.get_state().await);
+        // exit current state when triggeren by watchdog
+        let _switch_state_trigger = exit_state_r.recv().await;
+        // todo trigger actor cleanup tasks
+        info!(
+            "Terminate current state. Next state: {:?}",
+            self.state_store.get_state().await
+        );
     }
 
     pub async fn run_continuously(&mut self) {
-        //todo introduce complete shutdown ... shutdown should be renamed to exit/shutdown current state
         loop {
             self.run().await;
+            if self.shutdown {
+                break;
+            }
         }
     }
 
-    // todo maybe only in handles
     async fn send_heartbeats(&self) {
         let hb_interval = Duration::from_millis(self.config.state_timeout / 2); // todo into config
+        let mut exit_state_r = self.watchdog.get_exit_receiver().await;
         loop {
-            self.handles.send_heartbeat().await;
-            // to prevent timeout leader must trigger his own timer
-            self.handles.state_timer.register_heartbeat().await; // todo maybe trigger this in client if possible
-            tokio::time::sleep(hb_interval).await;
+            let hb_future = async {
+                self.handles.send_heartbeat().await;
+                // to prevent timeout leader must trigger his own timer
+                self.handles.state_timer.register_heartbeat().await; // todo if possible maybe trigger this in append entry client (when follower answer)
+                tokio::time::sleep(hb_interval).await;
+            };
+            tokio::select! {
+                _heartbeat= hb_future=> {},
+                _switch_state_trigger = exit_state_r.recv() => {break},
+            }
         }
     }
 }
@@ -125,13 +133,13 @@ async fn create_actors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::log::test_utils::TestApp;
     use crate::config::get_test_config;
+    // use tracing_test::traced_test;
 
     #[tokio::test]
+    // #[traced_test]
     async fn run_test() {
         let config = get_test_config().await;
-
         let mut raft = Raft::build(config).await;
         raft.run().await;
         raft.run().await;

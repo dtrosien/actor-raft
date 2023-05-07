@@ -28,7 +28,7 @@ impl StateStore {
     fn new(receiver: mpsc::Receiver<StateMsg>) -> Self {
         StateStore {
             receiver,
-            state: ServerState::Follower,
+            state: ServerState::Follower, // todo read from config
         }
     }
 
