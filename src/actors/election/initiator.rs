@@ -1,7 +1,6 @@
 use crate::actors::election::counter::CounterHandle;
 use crate::actors::election::worker::WorkerHandle;
 use crate::actors::term_store::TermStoreHandle;
-use crate::actors::watchdog::WatchdogHandle;
 use crate::config::{Config, Node};
 use crate::db::raft_db::RaftDb;
 use crate::raft_rpc::RequestVoteRequest;
@@ -13,7 +12,6 @@ use tokio::sync::{mpsc, oneshot};
 struct Initiator {
     receiver: mpsc::Receiver<InitiatorMsg>,
     term_store: TermStoreHandle,
-    counter: CounterHandle,
     workers: BTreeMap<u64, WorkerHandle>,
     db: RaftDb,
     voted_for: Option<u64>,
@@ -34,9 +32,6 @@ enum InitiatorMsg {
         respond_to: oneshot::Sender<Option<WorkerHandle>>,
         id: u64,
     },
-    GetCounter {
-        respond_to: oneshot::Sender<CounterHandle>,
-    },
     SetLastLogMeta {
         respond_to: oneshot::Sender<()>,
         last_log_index: u64,
@@ -53,7 +48,7 @@ impl Initiator {
     fn new(
         receiver: mpsc::Receiver<InitiatorMsg>,
         term: TermStoreHandle,
-        watchdog: WatchdogHandle,
+        counter: CounterHandle,
         config: Config,
         state_meta: StateMeta,
         path: String,
@@ -62,9 +57,7 @@ impl Initiator {
         let voted_for = db
             .read_voted_for()
             .expect("vote_store db seems to be corrupted");
-        let votes_required = calculate_required_votes(config.nodes.len() as u64);
         let id = config.id;
-        let counter = CounterHandle::new(watchdog, votes_required);
         let workers = config
             .nodes
             .into_iter()
@@ -78,7 +71,6 @@ impl Initiator {
         Initiator {
             receiver,
             term_store: term,
-            counter,
             workers,
             db,
             voted_for,
@@ -104,9 +96,6 @@ impl Initiator {
 
             InitiatorMsg::GetWorker { respond_to, id } => {
                 let _ = respond_to.send(self.get_worker(id));
-            }
-            InitiatorMsg::GetCounter { respond_to } => {
-                let _ = respond_to.send(self.counter.clone());
             }
             InitiatorMsg::SetLastLogMeta {
                 respond_to,
@@ -188,13 +177,13 @@ impl InitiatorHandle {
     #[tracing::instrument(ret, level = "debug")]
     pub fn new(
         term: TermStoreHandle,
-        watchdog: WatchdogHandle,
+        counter: CounterHandle,
         config: Config,
         state_meta: StateMeta,
         db_path: String,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut initiator = Initiator::new(receiver, term, watchdog, config, state_meta, db_path);
+        let mut initiator = Initiator::new(receiver, term, counter, config, state_meta, db_path);
         tokio::spawn(async move { initiator.run().await });
 
         Self { sender }
@@ -216,15 +205,6 @@ impl InitiatorHandle {
             respond_to: send,
             id,
         };
-
-        let _ = self.sender.send(msg).await;
-        recv.await.expect("Actor task has been killed")
-    }
-
-    #[tracing::instrument(ret, level = "debug")]
-    async fn get_counter(&self) -> CounterHandle {
-        let (send, recv) = oneshot::channel();
-        let msg = InitiatorMsg::GetCounter { respond_to: send };
 
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
@@ -263,19 +243,11 @@ impl InitiatorHandle {
     }
 }
 
-//exclude candidate (-> insert only number of other nodes)
-#[tracing::instrument(ret, level = "debug")]
-fn calculate_required_votes(nodes_num: u64) -> u64 {
-    if nodes_num % 2 == 0 {
-        nodes_num / 2
-    } else {
-        (nodes_num + 1) / 2
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actors::election::counter::calculate_required_votes;
+    use crate::actors::watchdog::WatchdogHandle;
     use crate::config::get_test_config;
     use crate::db::test_utils::get_test_db_paths;
     use crate::rpc::test_utils::{start_test_server, TestServerTrue};
@@ -294,9 +266,11 @@ mod tests {
             id: 0,
             leader_commit: 0,
         };
+        let votes_required = calculate_required_votes(config.nodes.len() as u64);
+        let counter = CounterHandle::new(watchdog, votes_required);
         let initiator = InitiatorHandle::new(
             term_store,
-            watchdog,
+            counter,
             config,
             state_meta,
             test_db_paths.pop().unwrap(),
@@ -325,9 +299,11 @@ mod tests {
             id: 0,
             leader_commit: 0,
         };
+        let votes_required = calculate_required_votes(config.nodes.len() as u64);
+        let counter = CounterHandle::new(watchdog, votes_required);
         let initiator = InitiatorHandle::new(
             term_store,
-            watchdog,
+            counter,
             config,
             state_meta,
             test_db_paths.pop().unwrap(),
@@ -360,14 +336,15 @@ mod tests {
             id: 0,
             leader_commit: 0,
         };
+        let votes_required = calculate_required_votes(config.nodes.len() as u64);
+        let counter = CounterHandle::new(watchdog, votes_required);
         let initiator = InitiatorHandle::new(
             term_store,
-            watchdog,
+            counter.clone(),
             config.clone(),
             state_meta,
             test_db_paths.pop().unwrap(),
         );
-        let counter = initiator.get_counter().await;
 
         let test_future = async {
             // sleep necessary to make sure that server is up
@@ -390,19 +367,5 @@ mod tests {
                     );
                 }
         }
-    }
-
-    #[tokio::test]
-    async fn calculate_required_votes_test() {
-        // only one server in total
-        assert_eq!(calculate_required_votes(0), 0);
-        // two servers total
-        assert_eq!(calculate_required_votes(1), 1);
-        // even number of other servers
-        assert_eq!(calculate_required_votes(2), 1);
-        assert_eq!(calculate_required_votes(10), 5);
-        //odd number of other servers
-        assert_eq!(calculate_required_votes(9), 5);
-        assert_eq!(calculate_required_votes(11), 6);
     }
 }

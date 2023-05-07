@@ -111,6 +111,16 @@ impl CounterHandle {
     }
 }
 
+//exclude candidate (-> insert only number of other nodes)
+#[tracing::instrument(ret, level = "debug")]
+pub fn calculate_required_votes(nodes_num: u64) -> u64 {
+    if nodes_num % 2 == 0 {
+        nodes_num / 2
+    } else {
+        (nodes_num + 1) / 2
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +175,19 @@ mod tests {
         _ = signal.recv() => {},
         _ = tokio::time::sleep(Duration::from_millis(5))=> {panic!()}
         }
+    }
+
+    #[tokio::test]
+    async fn calculate_required_votes_test() {
+        // only one server in total
+        assert_eq!(calculate_required_votes(0), 0);
+        // two servers total
+        assert_eq!(calculate_required_votes(1), 1);
+        // even number of other servers
+        assert_eq!(calculate_required_votes(2), 1);
+        assert_eq!(calculate_required_votes(10), 5);
+        //odd number of other servers
+        assert_eq!(calculate_required_votes(9), 5);
+        assert_eq!(calculate_required_votes(11), 6);
     }
 }

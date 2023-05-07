@@ -4,6 +4,8 @@ use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::replicator::ReplicatorHandle;
 use std::collections::VecDeque;
 
+use crate::actors::election::counter::calculate_required_votes;
+use crate::actors::election::counter::CounterHandle;
 use crate::actors::state_store::{ServerState, StateStoreHandle};
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::timer::TimerHandle;
@@ -21,7 +23,7 @@ pub struct RaftHandles {
     pub state_store: StateStoreHandle,
     pub state_timer: TimerHandle,
     pub term_store: TermStoreHandle,
-    // pub counter: CounterHandle, todo is initialized in Initiator, maybe better here?
+    pub counter: CounterHandle,
     pub initiator: InitiatorHandle,
     pub log_store: LogStoreHandle,
     pub executor: ExecutorHandle,
@@ -43,14 +45,16 @@ impl RaftHandles {
         let state_timeout = Duration::from_millis(config.state_timeout);
         let state_timer = TimerHandle::new(watchdog.clone(), state_timeout);
 
-        // todo create counter here
+        let votes_required = calculate_required_votes(config.nodes.len() as u64); // todo is there a nicer way?
+        let counter = CounterHandle::new(watchdog.clone(), votes_required);
         let initiator = InitiatorHandle::new(
             term_store.clone(),
-            watchdog.clone(),
+            counter.clone(),
             config.clone(),
             state_meta.clone(),
             config.vote_db_path.clone(),
         );
+
         let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, app);
         let replicator = ReplicatorHandle::new(
             executor.clone(),
@@ -64,6 +68,7 @@ impl RaftHandles {
             state_store,
             state_timer,
             term_store,
+            counter,
             initiator,
             log_store,
             executor,
@@ -144,17 +149,14 @@ impl RaftHandles {
             self.term_store.clone(),
         )
         .await;
-
+        // election
         self.initiator.reset_voted_for().await;
         self.initiator
             .set_last_log_meta(state_meta.previous_log_index, state_meta.previous_log_term)
             .await;
-
-        let counter = self.initiator.get_counter().await; // todo get from handles when init is refactored
-        counter.reset_votes_received().await;
-
+        self.counter.reset_votes_received().await;
+        // replication
         self.replicator.set_state_meta(state_meta.clone()).await;
-
         self.executor.set_state_meta(state_meta.clone()).await;
     }
 }
