@@ -20,7 +20,6 @@ pub struct RaftHandles {
     // todo make attributes private when it is clear which funcs are needed in server
     pub state_store: StateStoreHandle,
     pub state_timer: TimerHandle,
-    //pub election_timer: TimerHandle, // todo maybe not needed here
     pub term_store: TermStoreHandle,
     // pub counter: CounterHandle, todo is initialized in Initiator, maybe better here?
     pub initiator: InitiatorHandle,
@@ -28,7 +27,7 @@ pub struct RaftHandles {
     pub executor: ExecutorHandle,
     pub replicator: ReplicatorHandle,
     pub watchdog: WatchdogHandle,
-    config: Config, // todo possible to get rid of here if election timer is handled differently?
+    config: Config,
 }
 
 impl RaftHandles {
@@ -44,11 +43,6 @@ impl RaftHandles {
         let state_timeout = Duration::from_millis(config.state_timeout);
         let state_timer = TimerHandle::new(watchdog.clone(), state_timeout);
 
-        // let election_timeout = Duration::from_millis(
-        //     rand::thread_rng()
-        //         .gen_range(config.election_timeout_range.0..config.election_timeout_range.1),
-        // );
-        //let election_timer = TimerHandle::new(watchdog.clone(), election_timeout);
         // todo create counter here
         let initiator = InitiatorHandle::new(
             term_store.clone(),
@@ -91,7 +85,6 @@ impl RaftHandles {
     }
 
     // only possible in leader state because entry index must be correct
-    // todo there must be an mechanism to reset actors in case of a leader switch e.g. the next index needs to be adjusted after a follower becomes a leader
     pub async fn create_entry(&self, payload: String) -> Option<Entry> {
         if self.state_store.get_state().await != ServerState::Leader {
             return None;
@@ -157,7 +150,8 @@ impl RaftHandles {
             .set_last_log_meta(state_meta.previous_log_index, state_meta.previous_log_term)
             .await;
 
-        // todo counter reset votes
+        let counter = self.initiator.get_counter().await; // todo get from handles when init is refactored
+        counter.reset_votes_received().await;
 
         self.replicator.set_state_meta(state_meta.clone()).await;
 
