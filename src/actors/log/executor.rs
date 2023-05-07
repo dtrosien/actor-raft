@@ -136,7 +136,6 @@ impl Executor {
 
     #[tracing::instrument(ret, level = "debug")]
     async fn commit_log(&mut self, entry: Option<Entry>, leader_commit: u64) {
-        // todo leader commit should not be in entry because it might be wrong when reloaded from disc
         if let Some(entry) = entry {
             if leader_commit > self.commit_index {
                 self.commit_index = min(leader_commit, entry.index);

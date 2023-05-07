@@ -94,7 +94,7 @@ impl RaftRpc for RaftServer {
 
         // step 2: if voted_for is none or candidate_id,
         // and candidates log is at least as up to date as receivers log, grant vote
-        let voted_for = self.handles.initiator.get_voted_for().await; // todo candidate id needs to be reset in the beginning of a new term (triggered by term store? or by state change)
+        let voted_for = self.handles.initiator.get_voted_for().await;
         let last_log_index = self.handles.log_store.get_last_log_index().await;
 
         let vote_granted_id = match voted_for {

@@ -171,7 +171,6 @@ impl LogStore {
             }
             Err(_) => None,
         }
-        //todo send updated last log meta to election initiator or initiator reads the values?
     }
 
     #[tracing::instrument(ret, level = "debug")]
