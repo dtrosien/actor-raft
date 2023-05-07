@@ -83,6 +83,10 @@ impl Raft {
         }
     }
 
+    async fn start_rpc_server() {
+        // todo implement
+    }
+
     async fn send_heartbeats(&self) {
         let hb_interval = Duration::from_millis(self.config.state_timeout / 2); // todo into config
         let mut exit_state_r = self.watchdog.get_exit_receiver().await;
