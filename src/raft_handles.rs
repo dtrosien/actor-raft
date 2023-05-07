@@ -141,7 +141,7 @@ impl RaftHandles {
         }
     }
 
-    // todo unit test (also in actors)
+    // todo unit tests (also in actors)
     pub async fn reset_actor_states(&self) {
         let state_meta = StateMeta::build(
             self.config.id,
