@@ -26,7 +26,7 @@ pub struct RaftBuilder {
 impl RaftBuilder {
     pub fn new(app: Box<dyn App>) -> Self {
         let config = Config::default();
-        let s_shutdown = broadcast::channel(1).0; // todo broadcast (capacity?) or better oneshot etc?
+        let s_shutdown = broadcast::channel(1).0; // todo [check] broadcast (capacity?) or better oneshot etc?
         RaftBuilder {
             config,
             s_shutdown,
@@ -106,7 +106,7 @@ impl RaftBuilder {
     }
 }
 
-// todo implement real console printer for default
+// todo [feature] implement real console printer for default
 impl Default for RaftBuilder {
     fn default() -> Self {
         let app = Box::new(TestApp {});
