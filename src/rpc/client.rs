@@ -16,12 +16,12 @@ pub async fn request_vote(
     vote_request: RequestVoteRequest,
 ) -> Result<Reply, Box<dyn Error + Send + Sync>> {
     let channel = Channel::builder(uri.parse()?)
-        .connect_timeout(Duration::from_millis(2)) // todo not needed?
+        .connect_timeout(Duration::from_millis(2)) // todo  [feature] not needed?
         .connect()
         .await?;
 
     let request = tonic::Request::new(vote_request);
-    //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo define timeout for answer?
+    //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo [feature] define timeout for answer?
     let mut client = RaftRpcClient::new(channel);
 
     let response = client.request_votes(request).await?;
@@ -39,12 +39,12 @@ pub async fn append_entry(
     append_entry_request: AppendEntriesRequest,
 ) -> Result<Reply, Box<dyn Error + Send + Sync>> {
     let channel = Channel::builder(uri.parse()?)
-        .connect_timeout(Duration::from_millis(2)) // todo not needed?
+        .connect_timeout(Duration::from_millis(2)) // todo [feature] not needed?
         .connect()
         .await?;
 
     let request = tonic::Request::new(append_entry_request);
-    //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo define timeout for answer?
+    //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo [feature] define timeout for answer?
     let mut client = RaftRpcClient::new(channel);
 
     let response = client.append_entries(request).await?;

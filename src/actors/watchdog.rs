@@ -1,3 +1,4 @@
+use crate::actors::state_store::ServerState::Follower;
 use crate::actors::state_store::{ServerState, StateStoreHandle};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -130,7 +131,7 @@ impl WatchdogHandle {
 
 impl Default for WatchdogHandle {
     fn default() -> Self {
-        let state_handle = StateStoreHandle::new();
+        let state_handle = StateStoreHandle::default();
         WatchdogHandle::new(state_handle)
     }
 }

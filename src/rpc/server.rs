@@ -11,6 +11,12 @@ pub struct RaftServer {
     handles: RaftHandles,
 }
 
+impl RaftServer {
+    pub fn new(handles: RaftHandles) -> Self {
+        RaftServer { handles }
+    }
+}
+
 #[tonic::async_trait]
 impl RaftRpc for RaftServer {
     #[tracing::instrument(ret, level = "debug")]
@@ -153,7 +159,7 @@ mod tests {
     #[tokio::test]
     async fn append_entry_test() {
         let mut db_paths = get_test_db_paths(3).await;
-        let state_store = StateStoreHandle::new();
+        let state_store = StateStoreHandle::default();
         let wd = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
         let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
@@ -166,7 +172,7 @@ mod tests {
             previous_log_term: 0,  //only matters for replicator and voter
             term: 0,
             id: 0,
-            leader_commit: 0, // todo why couldnt this be set to zero inside actor
+            leader_commit: 0,
         };
 
         let config = get_test_config().await;
@@ -307,7 +313,7 @@ mod tests {
     #[tokio::test]
     async fn request_votes_test() {
         let mut db_paths = get_test_db_paths(3).await;
-        let state_store = StateStoreHandle::new();
+        let state_store = StateStoreHandle::default();
         let wd = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
         let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
@@ -320,7 +326,7 @@ mod tests {
             previous_log_term: 0,  // only matters for replicator
             term: 0,
             id: 0,
-            leader_commit: 0, // todo why couldnt this be set to zero inside actor
+            leader_commit: 0,
         };
         let config = get_test_config().await;
         let handles = RaftHandles::build(

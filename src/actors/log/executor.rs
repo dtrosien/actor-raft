@@ -19,7 +19,7 @@ struct Executor {
     commit_index: u64,
     last_applied: u64,
     num_workers: u64,
-    current_term: u64, //todo check if it is sufficient to pass the value or use the term checker
+    current_term: u64,
     match_index: HashMap<u64, u64>,
     log_store: LogStoreHandle,
     app: Box<dyn App>,
@@ -173,7 +173,7 @@ impl Executor {
                 let potential_commit_index =
                     new_commit_index(&mut self.match_index, self.commit_index, self.num_workers);
 
-                //todo is the termcheck possible without reading the log from disk?
+                //todo [performance] is the termcheck possible without reading the log from disk?
                 if let Some(entry) = self.log_store.read_entry(potential_commit_index).await {
                     if entry.term == self.current_term {
                         self.commit_index = potential_commit_index
@@ -300,7 +300,7 @@ fn new_commit_index(
     num_worker: u64,
 ) -> u64 {
     let mut count_map: HashMap<u64, u64> = HashMap::new();
-    //todo is there a better way than O(n^2)?
+    //todo [performance] is there a better way than O(n^2)?
     for (_id, max_index) in match_index.iter() {
         for index in last_commit_index..=*max_index {
             if count_map.contains_key(&index) {
@@ -438,7 +438,7 @@ mod tests {
         match_index.insert(6, 5000001);
         assert_eq!(new_commit_index(&mut match_index, 4999994, 5), 5000000);
 
-        //todo interesting for thesis: performance testing and when compaction must happen - is it really necessary when counting starts with last commit?
+        //todo [note] interesting for thesis: performance testing and when compaction must happen - is it really necessary when counting starts with last commit?
     }
 
     #[tokio::test]

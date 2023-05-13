@@ -25,10 +25,10 @@ enum StateMsg {
 }
 
 impl StateStore {
-    fn new(receiver: mpsc::Receiver<StateMsg>) -> Self {
+    fn new(receiver: mpsc::Receiver<StateMsg>, init_state: ServerState) -> Self {
         StateStore {
             receiver,
-            state: ServerState::Follower, // todo read from config
+            state: init_state,
         }
     }
 
@@ -58,9 +58,9 @@ pub struct StateStoreHandle {
 }
 
 impl StateStoreHandle {
-    pub fn new() -> Self {
+    pub fn new(init_state: ServerState) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut state_store = StateStore::new(receiver);
+        let mut state_store = StateStore::new(receiver, init_state);
 
         tokio::spawn(async move { state_store.run().await });
 
@@ -82,6 +82,6 @@ impl StateStoreHandle {
 
 impl Default for StateStoreHandle {
     fn default() -> Self {
-        StateStoreHandle::new()
+        StateStoreHandle::new(ServerState::Follower)
     }
 }

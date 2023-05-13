@@ -3,11 +3,11 @@ use crate::actors::term_store::TermStoreHandle;
 
 #[derive(Clone, Debug)]
 pub struct StateMeta {
-    pub previous_log_index: u64, // todo better call last index or latest replicated index? or need to track them differently?????
+    pub previous_log_index: u64, // todo [test] better name it last index or latest replicated index? or need to track them differently?????
     pub previous_log_term: u64,
     pub term: u64,
     pub id: u64,
-    pub leader_commit: u64,
+    pub leader_commit: u64, // todo [test] why couldnt this be set to zero inside actor
 }
 
 impl StateMeta {

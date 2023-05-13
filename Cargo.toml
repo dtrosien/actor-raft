@@ -23,6 +23,7 @@ tracing-test = "0.2.4" # put tracing output to console in unit tests
 tonic = "0.8" # grpc client and server
 prost = "0.11" # used for proto (de-)serialzation
 serde = { version = "1.0.147", features = ["derive"] } # used for (de-)serialzation
+futures-util = "0.3.28" # used to be able to use map on futures (e.g. for shutdown signal of tonic server)
 #clap = {version ="4.0.23",features = ["derive"] } # cli parser
 once_cell = "1.17.1" # used for static port counter in rpc unit tests
 sled = "0.34.7" # embedded db

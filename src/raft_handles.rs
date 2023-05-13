@@ -19,7 +19,7 @@ use tracing::info;
 
 #[derive(Clone, Debug)]
 pub struct RaftHandles {
-    // todo make attributes private when it is clear which funcs are needed in server
+    // todo [refactoring] make attributes private when it is clear which funcs are needed in server
     pub state_store: StateStoreHandle,
     pub state_timer: TimerHandle,
     pub term_store: TermStoreHandle,
@@ -45,7 +45,7 @@ impl RaftHandles {
         let state_timeout = Duration::from_millis(config.state_timeout);
         let state_timer = TimerHandle::new(watchdog.clone(), state_timeout);
 
-        let votes_required = calculate_required_votes(config.nodes.len() as u64); // todo is there a nicer way?
+        let votes_required = calculate_required_votes(config.nodes.len() as u64);
         let counter = CounterHandle::new(watchdog.clone(), votes_required);
         let initiator = InitiatorHandle::new(
             term_store.clone(),
@@ -111,7 +111,7 @@ impl RaftHandles {
         }
     }
 
-    // append only in leader state  // todo else send to leader
+    // append only in leader state  // todo [feature] proxy append to leader if in follower state
     pub async fn append_entries(&self, entries: VecDeque<Entry>) {
         if self.state_store.get_state().await == ServerState::Leader {
             self.log_store.append_entries(entries.clone()).await;
@@ -141,7 +141,7 @@ impl RaftHandles {
         }
     }
 
-    // todo unit tests (also in actors)
+    // todo [test] unit tests (also in actors)
     pub async fn reset_actor_states(&self) {
         let state_meta = StateMeta::build(
             self.config.id,
@@ -170,7 +170,7 @@ mod tests {
     #[tokio::test]
     async fn build_test() {
         let config = get_test_config().await;
-        let state_store = StateStoreHandle::new();
+        let state_store = StateStoreHandle::default();
         let wd = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(wd.clone(), config.term_db_path.clone());
         let log_store = LogStoreHandle::new(config.log_db_path.clone());
@@ -183,7 +183,7 @@ mod tests {
             previous_log_term,
             term: 0,
             id: 0,
-            leader_commit: 0, // todo why couldnt this be set to zero inside actor
+            leader_commit: 0,
         };
 
         let _handles = RaftHandles::build(

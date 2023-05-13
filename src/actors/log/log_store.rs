@@ -118,7 +118,7 @@ impl LogStore {
         }
     }
 
-    //todo change return to Vec<option<u64>> like with singe entry
+    //todo [test] test if return values are in correct order
     #[tracing::instrument(ret, level = "debug")]
     async fn append_entries_and_flush(
         &mut self,
@@ -153,7 +153,7 @@ impl LogStore {
             Ok(result) => {
                 if let Some(old_entry) = result {
                     if entry_term.ne(&old_entry.term) {
-                        //todo: think of better error handling for last index, just dropping complete db is not possible (commit index etc)
+                        //todo [feature] think of better error handling for last index, just dropping complete db is not possible (commit index etc)
                         let last_index = self
                             .db
                             .read_last_entry()
@@ -206,7 +206,6 @@ impl LogStore {
         self.last_log_term = 0;
         self.last_log_index = 0;
         self.next_log_index = 1;
-        //todo trigger executor to reset commit?
     }
 
     // this method covers step 2 of the append entries rpc receiver implementation of the raft paper
