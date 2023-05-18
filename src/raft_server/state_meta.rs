@@ -1,5 +1,5 @@
-use crate::raft_node::actors::log::log_store::LogStoreHandle;
-use crate::raft_node::actors::term_store::TermStoreHandle;
+use crate::raft_server::actors::log::log_store::LogStoreHandle;
+use crate::raft_server::actors::term_store::TermStoreHandle;
 
 #[derive(Clone, Debug)]
 pub struct StateMeta {

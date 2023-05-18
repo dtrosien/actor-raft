@@ -1,14 +1,14 @@
-use crate::raft_node::actors::log::executor::ExecutorHandle;
-use crate::raft_node::actors::log::log_store::LogStoreHandle;
-use crate::raft_node::actors::term_store::TermStoreHandle;
-use crate::raft_node::config::Node;
-use crate::raft_node::rpc::client;
 use crate::raft_rpc::append_entries_request::Entry;
 use crate::raft_rpc::AppendEntriesRequest;
+use crate::raft_server::actors::log::executor::ExecutorHandle;
+use crate::raft_server::actors::log::log_store::LogStoreHandle;
+use crate::raft_server::actors::term_store::TermStoreHandle;
+use crate::raft_server::config::NodeConfig;
+use crate::raft_server::rpc::client;
 
 use std::collections::VecDeque;
 
-use crate::raft_node::state_meta::StateMeta;
+use crate::raft_server::state_meta::StateMeta;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ struct Worker {
     term_store: TermStoreHandle,
     log_store: LogStoreHandle,
     executor: ExecutorHandle,
-    node: Node,
+    node: NodeConfig,
     uri: String,
     state_meta: StateMeta,
     entries_cache: VecDeque<Entry>,
@@ -26,7 +26,7 @@ struct Worker {
 #[derive(Debug)]
 enum WorkerMsg {
     GetNode {
-        respond_to: oneshot::Sender<Node>,
+        respond_to: oneshot::Sender<NodeConfig>,
     },
     GetStateMeta {
         respond_to: oneshot::Sender<StateMeta>,
@@ -54,7 +54,7 @@ impl Worker {
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
-        node: Node,
+        node: NodeConfig,
         state_meta: StateMeta,
     ) -> Self {
         let ip = node.ip.clone();
@@ -219,7 +219,7 @@ impl WorkerHandle {
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         executor: ExecutorHandle,
-        node: Node,
+        node: NodeConfig,
         state_meta: StateMeta,
     ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
@@ -230,7 +230,7 @@ impl WorkerHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    pub async fn get_node(&self) -> Node {
+    pub async fn get_node(&self) -> NodeConfig {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetNode { respond_to: send };
 
@@ -289,13 +289,13 @@ impl WorkerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raft_node::actors::log::test_utils::TestApp;
-    use crate::raft_node::actors::watchdog::WatchdogHandle;
-    use crate::raft_node::db::test_utils::get_test_db_paths;
-    use crate::raft_node::rpc::test_utils::{
+    use crate::raft_server::actors::log::test_utils::TestApp;
+    use crate::raft_server::actors::watchdog::WatchdogHandle;
+    use crate::raft_server::db::test_utils::get_test_db_paths;
+    use crate::raft_server::rpc::test_utils::{
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
-    use crate::raft_node::state_meta::StateMeta;
+    use crate::raft_server::state_meta::StateMeta;
     use std::time::Duration;
     use tokio::sync::broadcast;
 
@@ -503,7 +503,7 @@ mod tests {
 
     async fn prepare_test_dependencies() -> (
         u16,
-        Node,
+        NodeConfig,
         LogStoreHandle,
         ExecutorHandle,
         TermStoreHandle,
@@ -525,7 +525,7 @@ mod tests {
         let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);
         // test server connection
         let port = get_test_port().await;
-        let node = Node {
+        let node = NodeConfig {
             id: 0,
             ip: "[::1]".to_string(),
             port,

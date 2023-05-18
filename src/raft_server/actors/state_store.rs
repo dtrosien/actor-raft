@@ -1,4 +1,4 @@
-use crate::raft_node::raft::ServerState;
+use crate::raft_server::raft_node::ServerState;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]

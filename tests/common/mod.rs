@@ -1,5 +1,5 @@
-use actor_raft::raft_node::raft::App;
 use actor_raft::raft_rpc::append_entries_request::Entry;
+use actor_raft::raft_server::raft_node::App;
 use std::error::Error;
 
 #[derive(Debug)]

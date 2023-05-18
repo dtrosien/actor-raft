@@ -1,19 +1,19 @@
-use crate::raft_node::actors::election::initiator::InitiatorHandle;
-use crate::raft_node::actors::log::executor::ExecutorHandle;
-use crate::raft_node::actors::log::log_store::LogStoreHandle;
-use crate::raft_node::actors::log::replication::replicator::ReplicatorHandle;
+use crate::raft_server::actors::election::initiator::InitiatorHandle;
+use crate::raft_server::actors::log::executor::ExecutorHandle;
+use crate::raft_server::actors::log::log_store::LogStoreHandle;
+use crate::raft_server::actors::log::replication::replicator::ReplicatorHandle;
 use std::collections::VecDeque;
 
-use crate::raft_node::actors::election::counter::calculate_required_votes;
-use crate::raft_node::actors::election::counter::CounterHandle;
-use crate::raft_node::actors::state_store::StateStoreHandle;
-use crate::raft_node::actors::term_store::TermStoreHandle;
-use crate::raft_node::actors::timer::TimerHandle;
-use crate::raft_node::actors::watchdog::WatchdogHandle;
-use crate::raft_node::config::Config;
-use crate::raft_node::raft::{App, ServerState};
-use crate::raft_node::state_meta::StateMeta;
 use crate::raft_rpc::append_entries_request::Entry;
+use crate::raft_server::actors::election::counter::calculate_required_votes;
+use crate::raft_server::actors::election::counter::CounterHandle;
+use crate::raft_server::actors::state_store::StateStoreHandle;
+use crate::raft_server::actors::term_store::TermStoreHandle;
+use crate::raft_server::actors::timer::TimerHandle;
+use crate::raft_server::actors::watchdog::WatchdogHandle;
+use crate::raft_server::config::Config;
+use crate::raft_server::raft_node::{App, ServerState};
+use crate::raft_server::state_meta::StateMeta;
 use rand::Rng;
 use std::time::Duration;
 use tracing::info;
@@ -165,8 +165,8 @@ impl RaftHandles {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raft_node::actors::log::test_utils::TestApp;
-    use crate::raft_node::config::get_test_config;
+    use crate::raft_server::actors::log::test_utils::TestApp;
+    use crate::raft_server::config::get_test_config;
 
     #[tokio::test]
     async fn build_test() {

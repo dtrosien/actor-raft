@@ -1,7 +1,7 @@
 mod actors;
 mod config;
 mod db;
-pub mod raft;
 pub mod raft_handles;
+pub mod raft_node;
 mod rpc;
 mod state_meta;

@@ -1,4 +1,4 @@
-use crate::raft_node::raft::ServerState;
+use crate::raft_server::raft_node::ServerState;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -14,11 +14,11 @@ pub struct Config {
     pub heartbeat_interval: u64,
     pub election_timeout_range: (u64, u64),
     pub initial_state: ServerState,
-    pub nodes: Vec<Node>,
+    pub nodes: Vec<NodeConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, Hash, PartialEq)]
-pub struct Node {
+pub struct NodeConfig {
     pub id: u64,
     pub ip: String,
     pub port: u16,
@@ -51,12 +51,12 @@ impl Config {
 
 #[cfg(test)]
 pub async fn get_test_config() -> Config {
-    use crate::raft_node::db::test_utils::get_test_db_paths;
-    use crate::raft_node::rpc::test_utils::get_test_port;
+    use crate::raft_server::db::test_utils::get_test_db_paths;
+    use crate::raft_server::rpc::test_utils::get_test_port;
 
     let mut nodes = Vec::new();
     for n in 1..=4 {
-        let node = Node {
+        let node = NodeConfig {
             id: n,
             ip: "[::1]".to_string(),
             port: get_test_port().await,

@@ -1,13 +1,13 @@
-use crate::raft_node::actors::log::log_store::LogStoreHandle;
-use crate::raft_node::actors::log::test_utils::TestApp;
-use crate::raft_node::actors::state_store::StateStoreHandle;
-use crate::raft_node::actors::term_store::TermStoreHandle;
-use crate::raft_node::actors::watchdog::WatchdogHandle;
-use crate::raft_node::config::{Config, Node};
-use crate::raft_node::raft_handles::RaftHandles;
-use crate::raft_node::rpc::server::RaftServer;
-use crate::raft_node::state_meta::StateMeta;
 use crate::raft_rpc::raft_rpc_server::RaftRpcServer;
+use crate::raft_server::actors::log::log_store::LogStoreHandle;
+use crate::raft_server::actors::log::test_utils::TestApp;
+use crate::raft_server::actors::state_store::StateStoreHandle;
+use crate::raft_server::actors::term_store::TermStoreHandle;
+use crate::raft_server::actors::watchdog::WatchdogHandle;
+use crate::raft_server::config::{Config, NodeConfig};
+use crate::raft_server::raft_handles::RaftHandles;
+use crate::raft_server::rpc::server::RaftServer;
+use crate::raft_server::state_meta::StateMeta;
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -31,104 +31,108 @@ pub enum ServerState {
     Candidate,
 }
 
-pub struct RaftBuilder {
+pub struct RaftNodeBuilder {
     config: Config,
     s_shutdown: Sender<()>,
     app: Box<dyn App>,
 }
 
-impl RaftBuilder {
+impl RaftNodeBuilder {
     pub fn new(app: Box<dyn App>) -> Self {
         let config = Config::default();
         let s_shutdown = broadcast::channel(1).0; // todo [check] broadcast (capacity?) or better oneshot etc?
-        RaftBuilder {
+        RaftNodeBuilder {
             config,
             s_shutdown,
             app,
         }
     }
 
-    pub fn with_shutdown(&mut self, s_shutdown: broadcast::Sender<()>) -> &mut RaftBuilder {
+    pub fn with_shutdown(&mut self, s_shutdown: broadcast::Sender<()>) -> &mut RaftNodeBuilder {
         self.s_shutdown = s_shutdown;
         self
     }
 
-    pub fn with_app(&mut self, app: Box<dyn App>) -> &mut RaftBuilder {
+    pub fn with_app(&mut self, app: Box<dyn App>) -> &mut RaftNodeBuilder {
         self.app = app;
         self
     }
 
-    pub fn with_node(&mut self, node: Node) -> &mut RaftBuilder {
+    pub fn with_node(&mut self, node: NodeConfig) -> &mut RaftNodeBuilder {
         self.config.nodes.push(node);
         self
     }
 
-    pub fn with_id(&mut self, id: u64) -> &mut RaftBuilder {
+    pub fn with_id(&mut self, id: u64) -> &mut RaftNodeBuilder {
         self.config.id = id;
         self
     }
-    pub fn with_ip(&mut self, ip: &str) -> &mut RaftBuilder {
+    pub fn with_ip(&mut self, ip: &str) -> &mut RaftNodeBuilder {
         self.config.ip = ip.to_string();
         self
     }
-    pub fn with_port(&mut self, port: u16) -> &mut RaftBuilder {
+    pub fn with_port(&mut self, port: u16) -> &mut RaftNodeBuilder {
         self.config.port = port;
         self
     }
 
-    pub fn with_log_db_path(&mut self, path: String) -> &mut RaftBuilder {
+    pub fn with_log_db_path(&mut self, path: String) -> &mut RaftNodeBuilder {
         self.config.log_db_path = path;
         self
     }
-    pub fn with_term_db_path(&mut self, path: String) -> &mut RaftBuilder {
+    pub fn with_term_db_path(&mut self, path: String) -> &mut RaftNodeBuilder {
         self.config.term_db_path = path;
         self
     }
-    pub fn with_vote_db_path(&mut self, path: String) -> &mut RaftBuilder {
+    pub fn with_vote_db_path(&mut self, path: String) -> &mut RaftNodeBuilder {
         self.config.vote_db_path = path;
         self
     }
-    pub fn with_channel_capacity(&mut self, capacity: u16) -> &mut RaftBuilder {
+    pub fn with_channel_capacity(&mut self, capacity: u16) -> &mut RaftNodeBuilder {
         self.config.channel_capacity = capacity;
         self
     }
-    pub fn with_state_timeout(&mut self, timeout_ms: u64) -> &mut RaftBuilder {
+    pub fn with_state_timeout(&mut self, timeout_ms: u64) -> &mut RaftNodeBuilder {
         self.config.state_timeout = timeout_ms;
         self
     }
-    pub fn with_heartbeat_interval(&mut self, hb_interval_ms: u64) -> &mut RaftBuilder {
+    pub fn with_heartbeat_interval(&mut self, hb_interval_ms: u64) -> &mut RaftNodeBuilder {
         self.config.heartbeat_interval = hb_interval_ms;
         self
     }
-    pub fn with_election_timeout_range(&mut self, from_ms: u64, to_ms: u64) -> &mut RaftBuilder {
+    pub fn with_election_timeout_range(
+        &mut self,
+        from_ms: u64,
+        to_ms: u64,
+    ) -> &mut RaftNodeBuilder {
         self.config.election_timeout_range = (from_ms, to_ms);
         self
     }
-    pub fn with_initial_state(&mut self, state: ServerState) -> &mut RaftBuilder {
+    pub fn with_initial_state(&mut self, state: ServerState) -> &mut RaftNodeBuilder {
         self.config.initial_state = state;
         self
     }
-    pub fn with_nodes(&mut self, nodes: Vec<Node>) -> &mut RaftBuilder {
+    pub fn with_nodes(&mut self, nodes: Vec<NodeConfig>) -> &mut RaftNodeBuilder {
         nodes
             .iter()
             .for_each(|node| self.config.nodes.push(node.clone()));
         self
     }
 
-    pub async fn build(&self) -> Raft {
-        Raft::build(self.config.clone(), self.s_shutdown.clone()).await
+    pub async fn build(&self) -> RaftNode {
+        RaftNode::build(self.config.clone(), self.s_shutdown.clone()).await
     }
 }
 
 // todo [feature] implement real console printer for default
-impl Default for RaftBuilder {
+impl Default for RaftNodeBuilder {
     fn default() -> Self {
         let app = Box::new(TestApp {});
-        RaftBuilder::new(app)
+        RaftNodeBuilder::new(app)
     }
 }
 
-pub struct Raft {
+pub struct RaftNode {
     state_store: StateStoreHandle,
     watchdog: WatchdogHandle,
     handles: RaftHandles,
@@ -136,7 +140,7 @@ pub struct Raft {
     s_shutdown: Sender<()>,
 }
 
-impl Raft {
+impl RaftNode {
     pub async fn build(config: Config, s_shutdown: broadcast::Sender<()>) -> Self {
         let state_store = StateStoreHandle::new(config.initial_state.clone());
         let watchdog = WatchdogHandle::new(state_store.clone());
@@ -155,7 +159,7 @@ impl Raft {
             state_meta,
         );
 
-        Raft {
+        RaftNode {
             state_store,
             watchdog,
             handles,
@@ -172,7 +176,7 @@ impl Raft {
         self.config.clone()
     }
 
-    pub async fn run(&mut self) -> &mut Raft {
+    pub async fn run(&mut self) -> &mut RaftNode {
         // reset timer
         self.handles.state_timer.register_heartbeat().await;
         // register at watchdog to get notified when timeouts or term errors occurred
@@ -209,7 +213,7 @@ impl Raft {
         }
     }
 
-    pub async fn start_rpc_server(&mut self) -> &Raft {
+    pub async fn start_rpc_server(&mut self) -> &RaftNode {
         let raft_rpc = RaftServer::new(self.handles.clone());
         let raft_service = RaftRpcServer::new(raft_rpc);
 
@@ -230,7 +234,7 @@ impl Raft {
         self
     }
 
-    async fn send_heartbeats(&self) -> &Raft {
+    async fn send_heartbeats(&self) -> &RaftNode {
         let hb_interval = Duration::from_millis(self.config.heartbeat_interval);
         let exit_state_r = self.watchdog.get_exit_receiver().await;
         while exit_state_r.is_empty() {
@@ -246,8 +250,8 @@ impl Raft {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raft_node::config::get_test_config;
-    use crate::raft_node::raft::ServerState::Leader;
+    use crate::raft_server::config::get_test_config;
+    use crate::raft_server::raft_node::ServerState::Leader;
     // use tracing_test::traced_test;
 
     #[tokio::test]
@@ -256,11 +260,11 @@ mod tests {
         let s_shutdown = broadcast::channel(1).0;
 
         let config = get_test_config().await;
-        let mut raft = Raft::build(config, s_shutdown).await;
-        raft.start_rpc_server().await;
-        raft.run().await.run().await;
+        let mut raft_node = RaftNode::build(config, s_shutdown).await;
+        raft_node.start_rpc_server().await;
+        raft_node.run().await.run().await;
 
-        let rh = tokio::spawn(async move { raft.run_continuously().await });
+        let rh = tokio::spawn(async move { raft_node.run_continuously().await });
         let hb_interval = Duration::from_millis(400);
         tokio::select! {
             _ = rh => {},
@@ -272,7 +276,7 @@ mod tests {
     #[tokio::test]
     async fn builder_test() {
         let app = Box::new(TestApp {});
-        let raft = RaftBuilder::new(app)
+        let raft_node = RaftNodeBuilder::new(app)
             .with_id(1)
             .with_initial_state(Leader)
             .with_channel_capacity(10)
@@ -280,7 +284,7 @@ mod tests {
             .build()
             .await;
 
-        let config = raft.get_config();
+        let config = raft_node.get_config();
         let default_config = Config::default();
 
         //changed
@@ -293,6 +297,4 @@ mod tests {
         assert_eq!(config.state_timeout, default_config.state_timeout);
         assert_eq!(config.port, default_config.port);
     }
-
-    // todo integration tests + more unit tests + client
 }

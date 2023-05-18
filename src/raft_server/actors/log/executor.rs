@@ -1,8 +1,8 @@
-use crate::raft_node::actors::log::log_store::LogStoreHandle;
 use crate::raft_rpc::append_entries_request::Entry;
+use crate::raft_server::actors::log::log_store::LogStoreHandle;
 
-use crate::raft_node::raft::App;
-use crate::raft_node::state_meta::StateMeta;
+use crate::raft_server::raft_node::App;
+use crate::raft_server::state_meta::StateMeta;
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
@@ -332,8 +332,8 @@ fn calculate_required_replicas(num_worker: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raft_node::actors::log::test_utils::TestApp;
-    use crate::raft_node::db::test_utils::get_test_db_paths;
+    use crate::raft_server::actors::log::test_utils::TestApp;
+    use crate::raft_server::db::test_utils::get_test_db_paths;
 
     // #[tracing_test::traced_test]
     #[tokio::test]

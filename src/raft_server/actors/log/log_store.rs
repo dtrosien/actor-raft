@@ -1,5 +1,5 @@
-use crate::raft_node::db::raft_db::RaftDb;
 use crate::raft_rpc::append_entries_request::Entry;
+use crate::raft_server::db::raft_db::RaftDb;
 use std::collections::VecDeque;
 use std::error::Error;
 
@@ -353,7 +353,7 @@ impl LogStoreHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raft_node::db::test_utils::get_test_db_paths;
+    use crate::raft_server::db::test_utils::get_test_db_paths;
 
     #[tokio::test]
     async fn append_entry_test() {

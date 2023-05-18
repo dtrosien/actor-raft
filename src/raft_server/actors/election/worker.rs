@@ -1,8 +1,8 @@
-use crate::raft_node::actors::election::counter::CounterHandle;
-use crate::raft_node::actors::term_store::TermStoreHandle;
-use crate::raft_node::config::Node;
-use crate::raft_node::rpc;
 use crate::raft_rpc::RequestVoteRequest;
+use crate::raft_server::actors::election::counter::CounterHandle;
+use crate::raft_server::actors::term_store::TermStoreHandle;
+use crate::raft_server::config::NodeConfig;
+use crate::raft_server::rpc;
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -11,13 +11,17 @@ struct Worker {
     receiver: mpsc::Receiver<WorkerMsg>,
     term_store: TermStoreHandle,
     counter: CounterHandle,
-    node: Node,
+    node: NodeConfig,
 }
 
 #[derive(Debug)]
 enum WorkerMsg {
-    RequestVote { request: RequestVoteRequest },
-    GetNode { respond_to: oneshot::Sender<Node> },
+    RequestVote {
+        request: RequestVoteRequest,
+    },
+    GetNode {
+        respond_to: oneshot::Sender<NodeConfig>,
+    },
 }
 
 impl Worker {
@@ -26,7 +30,7 @@ impl Worker {
         receiver: mpsc::Receiver<WorkerMsg>,
         term: TermStoreHandle,
         counter: CounterHandle,
-        node: Node,
+        node: NodeConfig,
     ) -> Self {
         Worker {
             receiver,
@@ -79,7 +83,7 @@ pub struct WorkerHandle {
 
 impl WorkerHandle {
     #[tracing::instrument(ret, level = "debug")]
-    pub fn new(term_store: TermStoreHandle, counter: CounterHandle, node: Node) -> Self {
+    pub fn new(term_store: TermStoreHandle, counter: CounterHandle, node: NodeConfig) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut worker = Worker::new(receiver, term_store, counter, node);
         tokio::spawn(async move { worker.run().await });
@@ -88,7 +92,7 @@ impl WorkerHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    pub async fn get_node(&self) -> Node {
+    pub async fn get_node(&self) -> NodeConfig {
         let (send, recv) = oneshot::channel();
         let msg = WorkerMsg::GetNode { respond_to: send };
 
@@ -106,9 +110,9 @@ impl WorkerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raft_node::actors::watchdog::WatchdogHandle;
-    use crate::raft_node::db::test_utils::get_test_db_paths;
-    use crate::raft_node::rpc::test_utils::{get_test_port, start_test_server, TestServerTrue};
+    use crate::raft_server::actors::watchdog::WatchdogHandle;
+    use crate::raft_server::db::test_utils::get_test_db_paths;
+    use crate::raft_server::rpc::test_utils::{get_test_port, start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]
@@ -118,7 +122,7 @@ mod tests {
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let votes_required: u64 = 3;
         let counter = CounterHandle::new(watchdog, votes_required);
-        let node = Node {
+        let node = NodeConfig {
             id: 0,
             ip: "".to_string(),
             port: 0,
@@ -137,7 +141,7 @@ mod tests {
         let votes_required: u64 = 3;
         let counter = CounterHandle::new(watchdog, votes_required);
         let port = get_test_port().await;
-        let node = Node {
+        let node = NodeConfig {
             id: 0,
             ip: "[::1]".to_string(),
             port,
