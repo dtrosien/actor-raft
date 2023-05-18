@@ -1,5 +1,5 @@
-use actor_raft::raft::ServerState::Leader;
-use actor_raft::raft::{App, RaftBuilder};
+use actor_raft::raft_node::raft::ServerState::Leader;
+use actor_raft::raft_node::raft::{App, RaftBuilder};
 use actor_raft::raft_rpc::append_entries_request::Entry;
 use std::error::Error;
 

@@ -1,4 +1,4 @@
-use crate::raft::ServerState;
+use crate::raft_node::raft::ServerState;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -51,8 +51,8 @@ impl Config {
 
 #[cfg(test)]
 pub async fn get_test_config() -> Config {
-    use crate::db::test_utils::get_test_db_paths;
-    use crate::rpc::test_utils::get_test_port;
+    use crate::raft_node::db::test_utils::get_test_db_paths;
+    use crate::raft_node::rpc::test_utils::get_test_port;
 
     let mut nodes = Vec::new();
     for n in 1..=4 {

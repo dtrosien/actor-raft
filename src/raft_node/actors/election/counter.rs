@@ -1,4 +1,4 @@
-use crate::actors::watchdog::WatchdogHandle;
+use crate::raft_node::actors::watchdog::WatchdogHandle;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]

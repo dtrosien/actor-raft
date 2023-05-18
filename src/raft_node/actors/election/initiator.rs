@@ -1,10 +1,10 @@
-use crate::actors::election::counter::CounterHandle;
-use crate::actors::election::worker::WorkerHandle;
-use crate::actors::term_store::TermStoreHandle;
-use crate::config::Config;
-use crate::db::raft_db::RaftDb;
+use crate::raft_node::actors::election::counter::CounterHandle;
+use crate::raft_node::actors::election::worker::WorkerHandle;
+use crate::raft_node::actors::term_store::TermStoreHandle;
+use crate::raft_node::config::Config;
+use crate::raft_node::db::raft_db::RaftDb;
+use crate::raft_node::state_meta::StateMeta;
 use crate::raft_rpc::RequestVoteRequest;
-use crate::state_meta::StateMeta;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 
@@ -246,11 +246,11 @@ impl InitiatorHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::election::counter::calculate_required_votes;
-    use crate::actors::watchdog::WatchdogHandle;
-    use crate::config::get_test_config;
-    use crate::db::test_utils::get_test_db_paths;
-    use crate::rpc::test_utils::{start_test_server, TestServerTrue};
+    use crate::raft_node::actors::election::counter::calculate_required_votes;
+    use crate::raft_node::actors::watchdog::WatchdogHandle;
+    use crate::raft_node::config::get_test_config;
+    use crate::raft_node::db::test_utils::get_test_db_paths;
+    use crate::raft_node::rpc::test_utils::{start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]

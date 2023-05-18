@@ -1,5 +1,5 @@
-use crate::actors::state_store::StateStoreHandle;
-use crate::raft::ServerState;
+use crate::raft_node::actors::state_store::StateStoreHandle;
+use crate::raft_node::raft::ServerState;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 #[derive(Debug)]

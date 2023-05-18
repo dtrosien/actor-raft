@@ -1,5 +1,4 @@
-use crate::raft::ServerState;
-use serde::{Deserialize, Serialize};
+use crate::raft_node::raft::ServerState;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]

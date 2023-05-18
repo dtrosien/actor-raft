@@ -1,19 +1,19 @@
-use crate::actors::election::initiator::InitiatorHandle;
-use crate::actors::log::executor::ExecutorHandle;
-use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::replication::replicator::ReplicatorHandle;
+use crate::raft_node::actors::election::initiator::InitiatorHandle;
+use crate::raft_node::actors::log::executor::ExecutorHandle;
+use crate::raft_node::actors::log::log_store::LogStoreHandle;
+use crate::raft_node::actors::log::replication::replicator::ReplicatorHandle;
 use std::collections::VecDeque;
 
-use crate::actors::election::counter::calculate_required_votes;
-use crate::actors::election::counter::CounterHandle;
-use crate::actors::state_store::StateStoreHandle;
-use crate::actors::term_store::TermStoreHandle;
-use crate::actors::timer::TimerHandle;
-use crate::actors::watchdog::WatchdogHandle;
-use crate::config::Config;
-use crate::raft::{App, ServerState};
+use crate::raft_node::actors::election::counter::calculate_required_votes;
+use crate::raft_node::actors::election::counter::CounterHandle;
+use crate::raft_node::actors::state_store::StateStoreHandle;
+use crate::raft_node::actors::term_store::TermStoreHandle;
+use crate::raft_node::actors::timer::TimerHandle;
+use crate::raft_node::actors::watchdog::WatchdogHandle;
+use crate::raft_node::config::Config;
+use crate::raft_node::raft::{App, ServerState};
+use crate::raft_node::state_meta::StateMeta;
 use crate::raft_rpc::append_entries_request::Entry;
-use crate::state_meta::StateMeta;
 use rand::Rng;
 use std::time::Duration;
 use tracing::info;
@@ -165,8 +165,8 @@ impl RaftHandles {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::log::test_utils::TestApp;
-    use crate::config::get_test_config;
+    use crate::raft_node::actors::log::test_utils::TestApp;
+    use crate::raft_node::config::get_test_config;
 
     #[tokio::test]
     async fn build_test() {

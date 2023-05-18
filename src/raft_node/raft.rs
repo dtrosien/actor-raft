@@ -1,13 +1,13 @@
-use crate::actors::log::log_store::LogStoreHandle;
-use crate::actors::log::test_utils::TestApp;
-use crate::actors::state_store::StateStoreHandle;
-use crate::actors::term_store::TermStoreHandle;
-use crate::actors::watchdog::WatchdogHandle;
-use crate::config::{Config, Node};
-use crate::raft_handles::RaftHandles;
+use crate::raft_node::actors::log::log_store::LogStoreHandle;
+use crate::raft_node::actors::log::test_utils::TestApp;
+use crate::raft_node::actors::state_store::StateStoreHandle;
+use crate::raft_node::actors::term_store::TermStoreHandle;
+use crate::raft_node::actors::watchdog::WatchdogHandle;
+use crate::raft_node::config::{Config, Node};
+use crate::raft_node::raft_handles::RaftHandles;
+use crate::raft_node::rpc::server::RaftServer;
+use crate::raft_node::state_meta::StateMeta;
 use crate::raft_rpc::raft_rpc_server::RaftRpcServer;
-use crate::rpc::server::RaftServer;
-use crate::state_meta::StateMeta;
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -246,8 +246,8 @@ impl Raft {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::get_test_config;
-    use crate::raft::ServerState::Leader;
+    use crate::raft_node::config::get_test_config;
+    use crate::raft_node::raft::ServerState::Leader;
     // use tracing_test::traced_test;
 
     #[tokio::test]

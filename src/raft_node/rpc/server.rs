@@ -1,4 +1,4 @@
-use crate::raft_handles::RaftHandles;
+use crate::raft_node::raft_handles::RaftHandles;
 use crate::raft_rpc::raft_rpc_server::RaftRpc;
 use crate::raft_rpc::{
     AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
@@ -146,15 +146,15 @@ fn deny_vote_request(term: u64) -> Result<Response<RequestVoteReply>, Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::log::log_store::LogStoreHandle;
-    use crate::actors::log::test_utils::TestApp;
-    use crate::actors::state_store::StateStoreHandle;
-    use crate::actors::term_store::TermStoreHandle;
-    use crate::actors::watchdog::WatchdogHandle;
-    use crate::config::get_test_config;
-    use crate::db::test_utils::get_test_db_paths;
+    use crate::raft_node::actors::log::log_store::LogStoreHandle;
+    use crate::raft_node::actors::log::test_utils::TestApp;
+    use crate::raft_node::actors::state_store::StateStoreHandle;
+    use crate::raft_node::actors::term_store::TermStoreHandle;
+    use crate::raft_node::actors::watchdog::WatchdogHandle;
+    use crate::raft_node::config::get_test_config;
+    use crate::raft_node::db::test_utils::get_test_db_paths;
+    use crate::raft_node::state_meta::StateMeta;
     use crate::raft_rpc::append_entries_request::Entry;
-    use crate::state_meta::StateMeta;
 
     #[tokio::test]
     async fn append_entry_test() {

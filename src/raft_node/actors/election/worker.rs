@@ -1,8 +1,8 @@
-use crate::actors::election::counter::CounterHandle;
-use crate::actors::term_store::TermStoreHandle;
-use crate::config::Node;
+use crate::raft_node::actors::election::counter::CounterHandle;
+use crate::raft_node::actors::term_store::TermStoreHandle;
+use crate::raft_node::config::Node;
+use crate::raft_node::rpc;
 use crate::raft_rpc::RequestVoteRequest;
-use crate::rpc;
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -106,9 +106,9 @@ impl WorkerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::watchdog::WatchdogHandle;
-    use crate::db::test_utils::get_test_db_paths;
-    use crate::rpc::test_utils::{get_test_port, start_test_server, TestServerTrue};
+    use crate::raft_node::actors::watchdog::WatchdogHandle;
+    use crate::raft_node::db::test_utils::get_test_db_paths;
+    use crate::raft_node::rpc::test_utils::{get_test_port, start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]

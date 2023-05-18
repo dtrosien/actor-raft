@@ -1,5 +1,5 @@
-use crate::actors::watchdog::WatchdogHandle;
-use crate::db::raft_db::RaftDb;
+use crate::raft_node::actors::watchdog::WatchdogHandle;
+use crate::raft_node::db::raft_db::RaftDb;
 use std::cmp::Ordering;
 use tokio::sync::{mpsc, oneshot};
 
@@ -188,7 +188,7 @@ impl TermStoreHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::test_utils::get_test_db_paths;
+    use crate::raft_node::db::test_utils::get_test_db_paths;
 
     #[tokio::test]
     async fn get_term_test() {
