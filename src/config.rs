@@ -1,4 +1,4 @@
-use crate::actors::state_store::ServerState;
+use crate::raft::ServerState;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

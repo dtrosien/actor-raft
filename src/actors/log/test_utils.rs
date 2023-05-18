@@ -1,4 +1,4 @@
-use crate::actors::log::executor::App;
+use crate::raft::App;
 use crate::raft_rpc::append_entries_request::Entry;
 use std::error::Error;
 use std::fmt::Debug;

@@ -1,12 +1,6 @@
+use crate::raft::ServerState;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
-
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub enum ServerState {
-    Leader,
-    Follower,
-    Candidate,
-}
 
 #[derive(Debug)]
 struct StateStore {

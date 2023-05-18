@@ -1,6 +1,7 @@
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::raft_rpc::append_entries_request::Entry;
 
+use crate::raft::App;
 use crate::state_meta::StateMeta;
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
@@ -8,10 +9,6 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
 use tokio::sync::{mpsc, oneshot};
-
-pub trait App: Send + Sync + Debug {
-    fn run(&self, entry: Entry) -> Result<bool, Box<dyn Error + Send + Sync>>;
-}
 
 #[derive(Debug)]
 struct Executor {

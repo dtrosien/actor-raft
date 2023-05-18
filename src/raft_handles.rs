@@ -1,16 +1,17 @@
 use crate::actors::election::initiator::InitiatorHandle;
-use crate::actors::log::executor::{App, ExecutorHandle};
+use crate::actors::log::executor::ExecutorHandle;
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::replication::replicator::ReplicatorHandle;
 use std::collections::VecDeque;
 
 use crate::actors::election::counter::calculate_required_votes;
 use crate::actors::election::counter::CounterHandle;
-use crate::actors::state_store::{ServerState, StateStoreHandle};
+use crate::actors::state_store::StateStoreHandle;
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::timer::TimerHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::Config;
+use crate::raft::{App, ServerState};
 use crate::raft_rpc::append_entries_request::Entry;
 use crate::state_meta::StateMeta;
 use rand::Rng;

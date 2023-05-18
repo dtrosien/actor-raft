@@ -1,6 +1,6 @@
 use crate::actors::log::log_store::LogStoreHandle;
 use crate::actors::log::test_utils::TestApp;
-use crate::actors::state_store::{ServerState, StateStoreHandle};
+use crate::actors::state_store::StateStoreHandle;
 use crate::actors::term_store::TermStoreHandle;
 use crate::actors::watchdog::WatchdogHandle;
 use crate::config::{Config, Node};
@@ -9,13 +9,27 @@ use crate::raft_rpc::raft_rpc_server::RaftRpcServer;
 use crate::rpc::server::RaftServer;
 use crate::state_meta::StateMeta;
 use futures_util::FutureExt;
+use serde::{Deserialize, Serialize};
+use std::error::Error;
+use std::fmt::Debug;
 
-use crate::actors::log::executor::App;
+use crate::raft_rpc::append_entries_request::Entry;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tonic::transport::Server;
 use tracing::info;
+
+pub trait App: Send + Sync + Debug {
+    fn run(&self, entry: Entry) -> Result<bool, Box<dyn Error + Send + Sync>>;
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub enum ServerState {
+    Leader,
+    Follower,
+    Candidate,
+}
 
 pub struct RaftBuilder {
     config: Config,
@@ -232,8 +246,8 @@ impl Raft {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actors::state_store::ServerState::Leader;
     use crate::config::get_test_config;
+    use crate::raft::ServerState::Leader;
     // use tracing_test::traced_test;
 
     #[tokio::test]
@@ -279,4 +293,6 @@ mod tests {
         assert_eq!(config.state_timeout, default_config.state_timeout);
         assert_eq!(config.port, default_config.port);
     }
+
+    // todo integration tests + more unit tests + client
 }
