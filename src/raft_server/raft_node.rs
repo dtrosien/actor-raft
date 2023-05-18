@@ -1,4 +1,3 @@
-use crate::raft_rpc::raft_rpc_server::RaftRpcServer;
 use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server::actors::log::test_utils::TestApp;
 use crate::raft_server::actors::state_store::StateStoreHandle;
@@ -8,12 +7,13 @@ use crate::raft_server::config::{Config, NodeConfig};
 use crate::raft_server::raft_handles::RaftHandles;
 use crate::raft_server::rpc::server::RaftServer;
 use crate::raft_server::state_meta::StateMeta;
+use crate::raft_server_rpc::raft_rpc_server::RaftRpcServer;
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::Debug;
 
-use crate::raft_rpc::append_entries_request::Entry;
+use crate::raft_server_rpc::append_entries_request::Entry;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;

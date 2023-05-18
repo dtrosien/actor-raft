@@ -1,4 +1,4 @@
-use crate::raft_rpc::append_entries_request::Entry;
+use crate::raft_server_rpc::append_entries_request::Entry;
 use sled::Db;
 use std::error::Error;
 

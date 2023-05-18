@@ -1,10 +1,10 @@
-use crate::raft_rpc::RequestVoteRequest;
 use crate::raft_server::actors::election::counter::CounterHandle;
 use crate::raft_server::actors::election::worker::WorkerHandle;
 use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::config::Config;
 use crate::raft_server::db::raft_db::RaftDb;
 use crate::raft_server::state_meta::StateMeta;
+use crate::raft_server_rpc::RequestVoteRequest;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 

@@ -1,5 +1,5 @@
-use crate::raft_rpc::append_entries_request::Entry;
 use crate::raft_server::db::raft_db::RaftDb;
+use crate::raft_server_rpc::append_entries_request::Entry;
 use std::collections::VecDeque;
 use std::error::Error;
 

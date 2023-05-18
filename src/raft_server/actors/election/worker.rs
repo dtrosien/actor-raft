@@ -1,8 +1,8 @@
-use crate::raft_rpc::RequestVoteRequest;
 use crate::raft_server::actors::election::counter::CounterHandle;
 use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::config::NodeConfig;
 use crate::raft_server::rpc;
+use crate::raft_server_rpc::RequestVoteRequest;
 
 use tokio::sync::{mpsc, oneshot};
 

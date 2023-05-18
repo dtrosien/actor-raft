@@ -1,0 +1,47 @@
+syntax = "proto3";
+package raft_client_proto;
+
+//internal raft service
+service RaftClientRpc {
+  // invoked by clients to modify the replicated state
+  rpc ClientRequest (ClientRequestRequest) returns (ClientRequestReply);
+  // invoked by clients to open new sessions
+  rpc RegisterClient (RegisterClientRequest) returns (RegisterClientReply);
+  // invoked by clients to query the replicated state (read only commands)
+  rpc ClientQuery (ClientQueryRequest) returns (ClientQueryReply);
+
+}
+
+
+message ClientRequestRequest {
+  uint64 client_id = 1;
+  uint64 sequence_num = 2;
+  string command = 3;
+}
+
+message ClientRequestReply {
+  bool status = 1;
+  string response = 2;
+  uint64 leader_hint = 3;
+}
+
+
+message RegisterClientRequest{
+}
+
+message RegisterClientReply{
+  bool status = 1;
+  string client_id = 2;
+  uint64 leader_hint = 3;
+}
+
+
+message ClientQueryRequest{
+  string query = 1;
+}
+
+message ClientQueryReply{
+  bool status = 1;
+  string response = 2;
+  uint64 leader_hint = 3;
+}

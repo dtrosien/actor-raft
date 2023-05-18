@@ -1,4 +1,5 @@
 mod blank_actor;
+mod client_store;
 pub mod election;
 pub mod log;
 pub mod state_store;

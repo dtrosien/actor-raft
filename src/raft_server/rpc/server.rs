@@ -1,8 +1,8 @@
-use crate::raft_rpc::raft_rpc_server::RaftRpc;
-use crate::raft_rpc::{
+use crate::raft_server::raft_handles::RaftHandles;
+use crate::raft_server_rpc::raft_rpc_server::RaftRpc;
+use crate::raft_server_rpc::{
     AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
 };
-use crate::raft_server::raft_handles::RaftHandles;
 use std::collections::VecDeque;
 use tonic::{Request, Response, Status};
 
@@ -146,7 +146,6 @@ fn deny_vote_request(term: u64) -> Result<Response<RequestVoteReply>, Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::raft_rpc::append_entries_request::Entry;
     use crate::raft_server::actors::log::log_store::LogStoreHandle;
     use crate::raft_server::actors::log::test_utils::TestApp;
     use crate::raft_server::actors::state_store::StateStoreHandle;
@@ -155,6 +154,7 @@ mod tests {
     use crate::raft_server::config::get_test_config;
     use crate::raft_server::db::test_utils::get_test_db_paths;
     use crate::raft_server::state_meta::StateMeta;
+    use crate::raft_server_rpc::append_entries_request::Entry;
 
     #[tokio::test]
     async fn append_entry_test() {

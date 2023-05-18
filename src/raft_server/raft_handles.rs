@@ -4,7 +4,6 @@ use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server::actors::log::replication::replicator::ReplicatorHandle;
 use std::collections::VecDeque;
 
-use crate::raft_rpc::append_entries_request::Entry;
 use crate::raft_server::actors::election::counter::calculate_required_votes;
 use crate::raft_server::actors::election::counter::CounterHandle;
 use crate::raft_server::actors::state_store::StateStoreHandle;
@@ -14,6 +13,7 @@ use crate::raft_server::actors::watchdog::WatchdogHandle;
 use crate::raft_server::config::Config;
 use crate::raft_server::raft_node::{App, ServerState};
 use crate::raft_server::state_meta::StateMeta;
+use crate::raft_server_rpc::append_entries_request::Entry;
 use rand::Rng;
 use std::time::Duration;
 use tracing::info;

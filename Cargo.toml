@@ -12,7 +12,7 @@ path = "src/lib.rs"
 [dependencies]
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "fs", "sync", "time", "tracing"] }
 tracing = "0.1.37"
-tracing-subscriber = "0.3.16" # only for applications will be used for integration test and example implementation
+tracing-subscriber = "0.3.17" # only for applications will be used for integration test and example implementation
 tracing-test = "0.2.4" # put tracing output to console in unit tests
 #async-trait = "0.1.64"  # needed until async fn is supported in compiler
 tonic = "0.8" # grpc client and server

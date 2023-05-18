@@ -1,8 +1,8 @@
-use crate::raft_rpc::raft_rpc_server::{RaftRpc, RaftRpcServer};
-use crate::raft_rpc::{
+use crate::raft_server::rpc::client::Reply;
+use crate::raft_server_rpc::raft_rpc_server::{RaftRpc, RaftRpcServer};
+use crate::raft_server_rpc::{
     AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
 };
-use crate::raft_server::rpc::client::Reply;
 use once_cell::sync::Lazy;
 use std::error::Error;
 use std::future::Future;

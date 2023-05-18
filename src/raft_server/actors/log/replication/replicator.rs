@@ -3,9 +3,9 @@ use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server::actors::log::replication::worker::WorkerHandle;
 use crate::raft_server::actors::term_store::TermStoreHandle;
 
-use crate::raft_rpc::append_entries_request::Entry;
 use crate::raft_server::config::Config;
 use crate::raft_server::state_meta::StateMeta;
+use crate::raft_server_rpc::append_entries_request::Entry;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 

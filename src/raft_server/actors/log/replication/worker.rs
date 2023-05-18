@@ -1,10 +1,10 @@
-use crate::raft_rpc::append_entries_request::Entry;
-use crate::raft_rpc::AppendEntriesRequest;
 use crate::raft_server::actors::log::executor::ExecutorHandle;
 use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::config::NodeConfig;
 use crate::raft_server::rpc::client;
+use crate::raft_server_rpc::append_entries_request::Entry;
+use crate::raft_server_rpc::AppendEntriesRequest;
 
 use std::collections::VecDeque;
 

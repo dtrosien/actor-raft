@@ -1,5 +1,5 @@
 syntax = "proto3";
-package raft_proto;
+package raft_server_proto;
 
 //internal raft service
 service RaftRpc {

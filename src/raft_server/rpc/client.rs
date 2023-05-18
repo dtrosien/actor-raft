@@ -1,5 +1,5 @@
-use crate::raft_rpc::raft_rpc_client::RaftRpcClient;
-use crate::raft_rpc::{AppendEntriesRequest, RequestVoteRequest};
+use crate::raft_server_rpc::raft_rpc_client::RaftRpcClient;
+use crate::raft_server_rpc::{AppendEntriesRequest, RequestVoteRequest};
 use std::error::Error;
 use std::time::Duration;
 use tonic::transport::Channel;
@@ -62,11 +62,11 @@ mod tests {
     use super::*;
     use tonic::{Request, Response, Status};
 
-    use crate::raft_rpc::raft_rpc_server::RaftRpc;
-    use crate::raft_rpc::{AppendEntriesReply, RequestVoteReply, RequestVoteRequest};
     use crate::raft_server::rpc::test_utils::{
         get_test_port, start_test_request, start_test_server, TestServerFalse, TestServerTrue,
     };
+    use crate::raft_server_rpc::raft_rpc_server::RaftRpc;
+    use crate::raft_server_rpc::{AppendEntriesReply, RequestVoteReply, RequestVoteRequest};
 
     #[tokio::test]
     async fn request_vote_true_test() {
