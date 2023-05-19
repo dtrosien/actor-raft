@@ -292,7 +292,7 @@ mod tests {
     use crate::raft_server::actors::log::test_utils::TestApp;
     use crate::raft_server::actors::watchdog::WatchdogHandle;
     use crate::raft_server::db::test_utils::get_test_db_paths;
-    use crate::raft_server::rpc::test_utils::{
+    use crate::raft_server::rpc::utils::test::{
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
     use crate::raft_server::state_meta::StateMeta;

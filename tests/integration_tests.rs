@@ -64,23 +64,18 @@ async fn election_test() {
         .build()
         .await;
 
-    raft_node1.start_rpc_server().await;
-    raft_node2.start_rpc_server().await;
-    raft_node3.start_rpc_server().await;
-    // todo server start besser machen
+    let i1 = raft_node1.get_node_server_handle();
+    let i2 = raft_node2.get_node_server_handle();
+    let i3 = raft_node3.get_node_server_handle();
 
-    let i1 = raft_node1.server_handle.take();
-    let i2 = raft_node2.server_handle.take();
-    let i3 = raft_node3.server_handle.take();
-
-    // tokio::join!(
-    //     raft_node1.run(),
-    //     raft_node2.run(),
-    //     raft_node3.run(),
-    //     i1.unwrap(),
-    //     i2.unwrap(),
-    //     i3.unwrap()
-    // );
+    tokio::join!(
+        raft_node1.run_n_times(10),
+        raft_node2.run_n_times(10),
+        raft_node3.run_n_times(10),
+        i1.unwrap(),
+        i2.unwrap(),
+        i3.unwrap()
+    );
 }
 
 #[tokio::test]

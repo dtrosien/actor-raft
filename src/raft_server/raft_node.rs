@@ -5,26 +5,18 @@ use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::actors::watchdog::WatchdogHandle;
 use crate::raft_server::config::{Config, NodeConfig};
 use crate::raft_server::raft_handles::RaftHandles;
-use crate::raft_server::rpc::node_server::RaftNodeServer;
 use crate::raft_server::state_meta::StateMeta;
-use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::Debug;
-use tonic::codegen::http::{Request, Response};
-use tonic::codegen::Service;
-use tonic::server::NamedService;
-use tonic::transport::{Body, Server};
 
+use crate::raft_server::rpc::utils::{init_client_server, init_node_server};
 use crate::raft_server_rpc::append_entries_request::Entry;
-use crate::raft_server_rpc::raft_server_rpc_server::RaftServerRpcServer;
-use std::convert::Infallible;
-use std::net::SocketAddr;
+
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::Sender;
 use tokio::task::JoinHandle;
-use tonic::body::BoxBody;
 use tracing::info;
 
 pub trait App: Send + Sync + Debug {
@@ -42,6 +34,8 @@ pub struct RaftNodeBuilder {
     config: Config,
     s_shutdown: Sender<()>,
     app: Box<dyn App>,
+    node_server_enabled: bool,
+    client_service_enabled: bool,
 }
 
 impl RaftNodeBuilder {
@@ -52,11 +46,23 @@ impl RaftNodeBuilder {
             config,
             s_shutdown,
             app,
+            node_server_enabled: true,
+            client_service_enabled: true,
         }
     }
 
     pub fn with_shutdown(&mut self, s_shutdown: broadcast::Sender<()>) -> &mut RaftNodeBuilder {
         self.s_shutdown = s_shutdown;
+        self
+    }
+
+    pub fn with_client_service_enabled(&mut self, enable: bool) -> &mut RaftNodeBuilder {
+        self.client_service_enabled = enable;
+        self
+    }
+
+    pub fn with_rpc_server_enabled(&mut self, enable: bool) -> &mut RaftNodeBuilder {
+        self.node_server_enabled = enable;
         self
     }
 
@@ -127,7 +133,13 @@ impl RaftNodeBuilder {
     }
 
     pub async fn build(&self) -> RaftNode {
-        RaftNode::build(self.config.clone(), self.s_shutdown.clone()).await
+        RaftNode::build(
+            self.config.clone(),
+            self.s_shutdown.clone(),
+            self.node_server_enabled,
+            self.client_service_enabled,
+        )
+        .await
     }
 }
 
@@ -145,11 +157,17 @@ pub struct RaftNode {
     handles: RaftHandles,
     config: Config,
     s_shutdown: Sender<()>,
-    pub server_handle: Option<JoinHandle<()>>,
+    node_server: Option<JoinHandle<()>>,
+    client_server: Option<JoinHandle<()>>,
 }
 
 impl RaftNode {
-    pub async fn build(config: Config, s_shutdown: broadcast::Sender<()>) -> Self {
+    pub async fn build(
+        config: Config,
+        s_shutdown: broadcast::Sender<()>,
+        node_server_enabled: bool,
+        client_service_enabled: bool,
+    ) -> Self {
         let state_store = StateStoreHandle::new(config.initial_state.clone());
         let watchdog = WatchdogHandle::new(state_store.clone());
         let term_store = TermStoreHandle::new(watchdog.clone(), config.term_db_path.clone());
@@ -167,13 +185,37 @@ impl RaftNode {
             state_meta,
         );
 
+        let node_server = if node_server_enabled {
+            init_node_server(
+                s_shutdown.subscribe(),
+                handles.clone(),
+                config.ip.clone(),
+                config.port,
+            )
+            .await
+        } else {
+            None
+        };
+        let client_server = if node_server_enabled {
+            init_client_server(
+                s_shutdown.subscribe(),
+                handles.clone(),
+                config.ip.clone(),
+                config.port,
+            )
+            .await
+        } else {
+            None
+        };
+
         RaftNode {
             state_store,
             watchdog,
             handles,
             config,
             s_shutdown,
-            server_handle: None,
+            node_server,
+            client_server,
         }
     }
 
@@ -183,6 +225,13 @@ impl RaftNode {
 
     pub fn get_config(&self) -> Config {
         self.config.clone()
+    }
+
+    pub fn get_node_server_handle(&mut self) -> Option<JoinHandle<()>> {
+        self.node_server.take()
+    }
+    pub fn get_client_server_handle(&mut self) -> Option<JoinHandle<()>> {
+        self.client_server.take()
     }
 
     pub async fn run(&mut self) -> &mut RaftNode {
@@ -222,54 +271,37 @@ impl RaftNode {
         }
     }
 
-    pub async fn run_n_times(&mut self, n: u64) {
-        for _i in 1..=n {
-            info!("run n={}", n);
+    pub async fn run_n_times(&mut self, n: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
+        for i in 1..=n {
+            info!("run n={}", i);
             self.run().await;
         }
+        self.s_shutdown.send(()).unwrap();
+        Ok(())
     }
 
-    pub async fn start_rpc_server(&mut self) -> &RaftNode {
-        let raft_rpc = RaftNodeServer::new(self.handles.clone());
-        let raft_service = RaftServerRpcServer::new(raft_rpc);
-
-        let addr = format!("{}:{}", self.config.ip, self.config.port)
-            .parse()
-            .unwrap();
+    pub async fn restart_node_server(&mut self) -> &RaftNode {
         let r_shutdown = self.s_shutdown.subscribe();
-
-        self.server_handle = Some(
-            self.build_rpc_server(r_shutdown, addr, raft_service, "server".to_string())
-                .await,
-        );
-
+        self.node_server = init_node_server(
+            r_shutdown,
+            self.handles.clone(),
+            self.config.ip.clone(),
+            self.config.port,
+        )
+        .await;
         self
     }
 
-    async fn build_rpc_server<S>(
-        &mut self,
-        mut r_shutdown: Receiver<()>,
-        addr: SocketAddr,
-        service: S,
-        service_type: String,
-    ) -> JoinHandle<()>
-    where
-        S: Service<Request<Body>, Response = Response<BoxBody>, Error = Infallible>
-            + NamedService
-            + Clone
-            + Send
-            + 'static,
-        S::Future: Send + 'static,
-    {
-        tokio::spawn(async move {
-            info!("starting tonic raft-{} rpc server", service_type);
-            Server::builder()
-                .add_service(service)
-                .serve_with_shutdown(addr, r_shutdown.recv().map(|_| ()))
-                .await
-                .unwrap();
-            info!("tonic raft-{} rpc server was shut down", service_type);
-        })
+    pub async fn restart_client_server(&mut self) -> &RaftNode {
+        let r_shutdown = self.s_shutdown.subscribe();
+        self.client_server = init_client_server(
+            r_shutdown,
+            self.handles.clone(),
+            self.config.ip.clone(),
+            self.config.port,
+        )
+        .await;
+        self
     }
 
     async fn send_heartbeats(&self) -> &RaftNode {
@@ -291,16 +323,15 @@ mod tests {
     use super::*;
     use crate::raft_server::config::get_test_config;
     use crate::raft_server::raft_node::ServerState::Leader;
-    // use tracing_test::traced_test;
 
     #[tokio::test]
-    // #[traced_test]
     async fn run_test() {
         let s_shutdown = broadcast::channel(1).0;
 
         let config = get_test_config().await;
-        let mut raft_node = RaftNode::build(config, s_shutdown).await;
-        raft_node.start_rpc_server().await;
+        let mut raft_node = RaftNode::build(config, s_shutdown, true, true).await;
+        raft_node.restart_node_server().await;
+        raft_node.restart_client_server().await;
         raft_node.run().await.run().await;
 
         let rh = tokio::spawn(async move { raft_node.run_continuously().await });

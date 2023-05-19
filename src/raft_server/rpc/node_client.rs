@@ -62,7 +62,7 @@ mod tests {
     use super::*;
     use tonic::{Request, Response, Status};
 
-    use crate::raft_server::rpc::test_utils::{
+    use crate::raft_server::rpc::utils::test::{
         get_test_port, start_test_request, start_test_server, TestServerFalse, TestServerTrue,
     };
     use crate::raft_server_rpc::{AppendEntriesReply, RequestVoteReply, RequestVoteRequest};

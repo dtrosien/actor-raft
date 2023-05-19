@@ -112,7 +112,7 @@ mod tests {
     use super::*;
     use crate::raft_server::actors::watchdog::WatchdogHandle;
     use crate::raft_server::db::test_utils::get_test_db_paths;
-    use crate::raft_server::rpc::test_utils::{get_test_port, start_test_server, TestServerTrue};
+    use crate::raft_server::rpc::utils::test::{get_test_port, start_test_server, TestServerTrue};
     use std::time::Duration;
 
     #[tokio::test]

@@ -6,6 +6,7 @@ pub struct Config {
     pub id: u64,
     pub ip: String,
     pub port: u16,
+    pub service_port: u16,
     pub log_db_path: String,
     pub term_db_path: String,
     pub vote_db_path: String,
@@ -30,6 +31,7 @@ impl Default for Config {
             id: 0,
             ip: "[::1]".to_string(),
             port: 50055,
+            service_port: 60055,
             log_db_path: "databases/log-db".to_string(),
             term_db_path: "databases/term-db".to_string(),
             vote_db_path: "databases/vote-db".to_string(),
@@ -52,7 +54,7 @@ impl Config {
 #[cfg(test)]
 pub async fn get_test_config() -> Config {
     use crate::raft_server::db::test_utils::get_test_db_paths;
-    use crate::raft_server::rpc::test_utils::get_test_port;
+    use crate::raft_server::rpc::utils::test::get_test_port;
 
     let mut nodes = Vec::new();
     for n in 1..=4 {
@@ -68,6 +70,7 @@ pub async fn get_test_config() -> Config {
         id: 0,
         ip: "[::1]".to_string(),
         port: get_test_port().await,
+        service_port: get_test_port().await,
         log_db_path: db_paths.pop().unwrap(),
         term_db_path: db_paths.pop().unwrap(),
         vote_db_path: db_paths.pop().unwrap(),

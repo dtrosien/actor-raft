@@ -224,7 +224,9 @@ mod tests {
     use crate::raft_server::actors::watchdog::WatchdogHandle;
     use crate::raft_server::config::get_test_config;
     use crate::raft_server::db::test_utils::get_test_db_paths;
-    use crate::raft_server::rpc::test_utils::{start_test_server, TestServerFalse, TestServerTrue};
+    use crate::raft_server::rpc::utils::test::{
+        start_test_server, TestServerFalse, TestServerTrue,
+    };
     use std::time::Duration;
     use tokio::sync::broadcast;
 
