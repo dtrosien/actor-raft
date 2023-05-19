@@ -2,7 +2,7 @@ syntax = "proto3";
 package raft_server_proto;
 
 //internal raft service
-service RaftRpc {
+service RaftServerRpc {
   // invoked by leader to replicate log entries; also used as heartbeat
   rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesReply);
   // invoked by candidates to receive votes from followers

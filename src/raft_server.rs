@@ -1,5 +1,5 @@
 mod actors;
-mod config;
+pub mod config;
 mod db;
 pub mod raft_handles;
 pub mod raft_node;

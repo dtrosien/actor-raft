@@ -2,7 +2,7 @@ use crate::raft_server::actors::log::executor::ExecutorHandle;
 use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::config::NodeConfig;
-use crate::raft_server::rpc::client;
+use crate::raft_server::rpc::node_client;
 use crate::raft_server_rpc::append_entries_request::Entry;
 use crate::raft_server_rpc::AppendEntriesRequest;
 
@@ -124,7 +124,7 @@ impl Worker {
         last_entry_index: u64,
         last_entry_term: u64,
     ) {
-        match client::append_entry(self.uri.clone(), request).await {
+        match node_client::append_entry(self.uri.clone(), request).await {
             Ok(response) => {
                 self.term_store.check_term(response.term).await;
                 if response.success_or_granted {

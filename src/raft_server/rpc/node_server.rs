@@ -1,5 +1,5 @@
 use crate::raft_server::raft_handles::RaftHandles;
-use crate::raft_server_rpc::raft_rpc_server::RaftRpc;
+use crate::raft_server_rpc::raft_server_rpc_server::RaftServerRpc;
 use crate::raft_server_rpc::{
     AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
 };
@@ -7,18 +7,18 @@ use std::collections::VecDeque;
 use tonic::{Request, Response, Status};
 
 #[derive(Debug)]
-pub struct RaftServer {
+pub struct RaftNodeServer {
     handles: RaftHandles,
 }
 
-impl RaftServer {
+impl RaftNodeServer {
     pub fn new(handles: RaftHandles) -> Self {
-        RaftServer { handles }
+        RaftNodeServer { handles }
     }
 }
 
 #[tonic::async_trait]
-impl RaftRpc for RaftServer {
+impl RaftServerRpc for RaftNodeServer {
     #[tracing::instrument(ret, level = "debug")]
     async fn append_entries(
         &self,
@@ -185,7 +185,7 @@ mod tests {
             log_store,
             state_meta,
         );
-        let raft_server = RaftServer { handles };
+        let raft_server = RaftNodeServer { handles };
 
         raft_server.handles.initiator.reset_voted_for().await;
 
@@ -338,7 +338,7 @@ mod tests {
             log_store,
             state_meta,
         );
-        let raft_server = RaftServer { handles };
+        let raft_server = RaftNodeServer { handles };
 
         raft_server.handles.initiator.reset_voted_for().await;
 

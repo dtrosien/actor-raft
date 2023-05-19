@@ -5,19 +5,26 @@ use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::actors::watchdog::WatchdogHandle;
 use crate::raft_server::config::{Config, NodeConfig};
 use crate::raft_server::raft_handles::RaftHandles;
-use crate::raft_server::rpc::server::RaftServer;
+use crate::raft_server::rpc::node_server::RaftNodeServer;
 use crate::raft_server::state_meta::StateMeta;
-use crate::raft_server_rpc::raft_rpc_server::RaftRpcServer;
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::Debug;
+use tonic::codegen::http::{Request, Response};
+use tonic::codegen::Service;
+use tonic::server::NamedService;
+use tonic::transport::{Body, Server};
 
 use crate::raft_server_rpc::append_entries_request::Entry;
+use crate::raft_server_rpc::raft_server_rpc_server::RaftServerRpcServer;
+use std::convert::Infallible;
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio::sync::broadcast::Sender;
-use tonic::transport::Server;
+use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::task::JoinHandle;
+use tonic::body::BoxBody;
 use tracing::info;
 
 pub trait App: Send + Sync + Debug {
@@ -76,16 +83,16 @@ impl RaftNodeBuilder {
         self
     }
 
-    pub fn with_log_db_path(&mut self, path: String) -> &mut RaftNodeBuilder {
-        self.config.log_db_path = path;
+    pub fn with_log_db_path(&mut self, path: &str) -> &mut RaftNodeBuilder {
+        self.config.log_db_path = path.to_string();
         self
     }
-    pub fn with_term_db_path(&mut self, path: String) -> &mut RaftNodeBuilder {
-        self.config.term_db_path = path;
+    pub fn with_term_db_path(&mut self, path: &str) -> &mut RaftNodeBuilder {
+        self.config.term_db_path = path.to_string();
         self
     }
-    pub fn with_vote_db_path(&mut self, path: String) -> &mut RaftNodeBuilder {
-        self.config.vote_db_path = path;
+    pub fn with_vote_db_path(&mut self, path: &str) -> &mut RaftNodeBuilder {
+        self.config.vote_db_path = path.to_string();
         self
     }
     pub fn with_channel_capacity(&mut self, capacity: u16) -> &mut RaftNodeBuilder {
@@ -138,6 +145,7 @@ pub struct RaftNode {
     handles: RaftHandles,
     config: Config,
     s_shutdown: Sender<()>,
+    pub server_handle: Option<JoinHandle<()>>,
 }
 
 impl RaftNode {
@@ -165,6 +173,7 @@ impl RaftNode {
             handles,
             config,
             s_shutdown,
+            server_handle: None,
         }
     }
 
@@ -213,31 +222,61 @@ impl RaftNode {
         }
     }
 
+    pub async fn run_n_times(&mut self, n: u64) {
+        for _i in 1..=n {
+            info!("run n={}", n);
+            self.run().await;
+        }
+    }
+
     pub async fn start_rpc_server(&mut self) -> &RaftNode {
-        let raft_rpc = RaftServer::new(self.handles.clone());
-        let raft_service = RaftRpcServer::new(raft_rpc);
+        let raft_rpc = RaftNodeServer::new(self.handles.clone());
+        let raft_service = RaftServerRpcServer::new(raft_rpc);
 
         let addr = format!("{}:{}", self.config.ip, self.config.port)
             .parse()
             .unwrap();
+        let r_shutdown = self.s_shutdown.subscribe();
 
-        let mut r_shutdown = self.s_shutdown.subscribe();
+        self.server_handle = Some(
+            self.build_rpc_server(r_shutdown, addr, raft_service, "server".to_string())
+                .await,
+        );
 
+        self
+    }
+
+    async fn build_rpc_server<S>(
+        &mut self,
+        mut r_shutdown: Receiver<()>,
+        addr: SocketAddr,
+        service: S,
+        service_type: String,
+    ) -> JoinHandle<()>
+    where
+        S: Service<Request<Body>, Response = Response<BoxBody>, Error = Infallible>
+            + NamedService
+            + Clone
+            + Send
+            + 'static,
+        S::Future: Send + 'static,
+    {
         tokio::spawn(async move {
+            info!("starting tonic raft-{} rpc server", service_type);
             Server::builder()
-                .add_service(raft_service)
+                .add_service(service)
                 .serve_with_shutdown(addr, r_shutdown.recv().map(|_| ()))
                 .await
                 .unwrap();
-            info!("tonic rpc server was shut down");
-        });
-        self
+            info!("tonic raft-{} rpc server was shut down", service_type);
+        })
     }
 
     async fn send_heartbeats(&self) -> &RaftNode {
         let hb_interval = Duration::from_millis(self.config.heartbeat_interval);
         let exit_state_r = self.watchdog.get_exit_receiver().await;
         while exit_state_r.is_empty() {
+            info!("send heartbeat");
             self.handles.send_heartbeat().await;
             // to prevent timeout leader must trigger his own timer
             self.handles.state_timer.register_heartbeat().await; // todo if possible maybe trigger this in append entry client (when follower answer)

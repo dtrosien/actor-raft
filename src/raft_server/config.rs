@@ -34,7 +34,7 @@ impl Default for Config {
             term_db_path: "databases/term-db".to_string(),
             vote_db_path: "databases/vote-db".to_string(),
             channel_capacity: 20,
-            state_timeout: 500,
+            state_timeout: 700,
             heartbeat_interval: 250,
             election_timeout_range: (100, 300),
             initial_state: ServerState::Follower,

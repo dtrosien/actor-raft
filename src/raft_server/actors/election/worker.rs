@@ -65,7 +65,7 @@ impl Worker {
         let port = self.node.port;
         let uri = format!("https://{ip}:{port}");
 
-        match rpc::client::request_vote(uri, request).await {
+        match rpc::node_client::request_vote(uri, request).await {
             Ok(reply) => {
                 // this call is non blocking and might fire a term error
                 self.term_store.check_term(reply.term).await;

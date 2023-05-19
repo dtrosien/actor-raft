@@ -1,4 +1,4 @@
-use crate::raft_server_rpc::raft_rpc_client::RaftRpcClient;
+use crate::raft_server_rpc::raft_server_rpc_client::RaftServerRpcClient;
 use crate::raft_server_rpc::{AppendEntriesRequest, RequestVoteRequest};
 use std::error::Error;
 use std::time::Duration;
@@ -22,7 +22,7 @@ pub async fn request_vote(
 
     let request = tonic::Request::new(vote_request);
     //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo [feature] define timeout for answer?
-    let mut client = RaftRpcClient::new(channel);
+    let mut client = RaftServerRpcClient::new(channel);
 
     let response = client.request_votes(request).await?;
     let response_arguments = response.into_inner();
@@ -45,7 +45,7 @@ pub async fn append_entry(
 
     let request = tonic::Request::new(append_entry_request);
     //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo [feature] define timeout for answer?
-    let mut client = RaftRpcClient::new(channel);
+    let mut client = RaftServerRpcClient::new(channel);
 
     let response = client.append_entries(request).await?;
     let response_arguments = response.into_inner();
@@ -65,7 +65,6 @@ mod tests {
     use crate::raft_server::rpc::test_utils::{
         get_test_port, start_test_request, start_test_server, TestServerFalse, TestServerTrue,
     };
-    use crate::raft_server_rpc::raft_rpc_server::RaftRpc;
     use crate::raft_server_rpc::{AppendEntriesReply, RequestVoteReply, RequestVoteRequest};
 
     #[tokio::test]

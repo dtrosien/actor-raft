@@ -1,5 +1,5 @@
-use crate::raft_server::rpc::client::Reply;
-use crate::raft_server_rpc::raft_rpc_server::{RaftRpc, RaftRpcServer};
+use crate::raft_server::rpc::node_client::Reply;
+use crate::raft_server_rpc::raft_server_rpc_server::{RaftServerRpc, RaftServerRpcServer};
 use crate::raft_server_rpc::{
     AppendEntriesReply, AppendEntriesRequest, RequestVoteReply, RequestVoteRequest,
 };
@@ -39,8 +39,8 @@ where
 
 // starts tonic test server for unit tests
 #[cfg(test)]
-pub async fn start_test_server<T: RaftRpc>(port: u16, rpc_test_case: T) {
-    let raft_service = RaftRpcServer::new(rpc_test_case);
+pub async fn start_test_server<T: RaftServerRpc>(port: u16, rpc_test_case: T) {
+    let raft_service = RaftServerRpcServer::new(rpc_test_case);
     let addr = format!("[::1]:{port}").parse().unwrap();
     let result = Server::builder()
         .add_service(raft_service)
@@ -57,7 +57,7 @@ pub async fn start_test_server<T: RaftRpc>(port: u16, rpc_test_case: T) {
 pub struct TestServerTrue {}
 #[cfg(test)]
 #[tonic::async_trait]
-impl RaftRpc for TestServerTrue {
+impl RaftServerRpc for TestServerTrue {
     async fn append_entries(
         &self,
         request: Request<AppendEntriesRequest>,
@@ -86,7 +86,7 @@ impl RaftRpc for TestServerTrue {
 pub struct TestServerFalse {}
 #[cfg(test)]
 #[tonic::async_trait]
-impl RaftRpc for TestServerFalse {
+impl RaftServerRpc for TestServerFalse {
     async fn append_entries(
         &self,
         request: Request<AppendEntriesRequest>,
