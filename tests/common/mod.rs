@@ -30,3 +30,13 @@ pub async fn get_test_db_paths(amount: u16) -> Vec<String> {
     }
     paths
 }
+
+
+// global var used to offer unique ports for each rpc call in unit tests starting from port number 50060
+static GLOBAL_PORT_COUNTER: Lazy<Mutex<u16>> = Lazy::new(|| Mutex::new(50060));
+// get port from GLOBAL_PORT_COUNTER
+pub async fn get_test_port() -> u16 {
+    let mut i = GLOBAL_PORT_COUNTER.lock().await;
+    *i += 1;
+    *i
+}

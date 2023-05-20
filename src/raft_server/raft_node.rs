@@ -230,11 +230,11 @@ impl RaftNode {
         self.client_server.take()
     }
 
-    pub async fn run(&mut self) -> &mut RaftNode {
+    async fn run(&mut self) -> &mut RaftNode {
         // reset timer
         self.handles.state_timer.register_heartbeat().await;
         // register at watchdog to get notified when timeouts or term errors occurred
-        let mut exit_state_r = self.watchdog.get_exit_receiver().await;
+        let mut r_exit_state = self.watchdog.get_exit_receiver().await;
 
         match self.handles.state_store.get_state().await {
             ServerState::Leader => {
@@ -250,7 +250,7 @@ impl RaftNode {
             }
         }
         // exit current state when triggered by watchdog
-        let _switch_state_trigger = exit_state_r.recv().await;
+        let _switch_state_trigger = r_exit_state.recv().await;
 
         self.handles.reset_actor_states().await;
         info!(
@@ -267,13 +267,13 @@ impl RaftNode {
         }
     }
 
-    pub async fn run_n_times(&mut self, n: u64) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn run_n_times(&mut self, n: u64) -> &RaftNode {
         for i in 1..=n {
             info!("run n={}", i);
             self.run().await;
         }
         self.s_shutdown.send(()).unwrap();
-        Ok(())
+        self
     }
 
     pub async fn restart_node_server(&mut self) -> &RaftNode {
@@ -310,8 +310,9 @@ impl RaftNode {
 
     async fn send_heartbeats(&self) -> &RaftNode {
         let hb_interval = Duration::from_millis(self.config.heartbeat_interval);
-        let exit_state_r = self.watchdog.get_exit_receiver().await;
-        while exit_state_r.is_empty() {
+        let r_exit_state = self.watchdog.get_exit_receiver().await;
+        let r_shutdown = self.s_shutdown.subscribe();
+        while r_exit_state.is_empty() && r_shutdown.is_empty() {
             info!("send heartbeat");
             self.handles.send_heartbeat().await;
             // to prevent timeout leader must trigger his own timer

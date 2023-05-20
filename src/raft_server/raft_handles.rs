@@ -30,7 +30,7 @@ pub struct RaftHandles {
     pub executor: ExecutorHandle,
     pub replicator: ReplicatorHandle,
     pub watchdog: WatchdogHandle,
-    config: Config,
+    pub config: Config,
 }
 
 impl RaftHandles {
