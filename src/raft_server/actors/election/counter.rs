@@ -1,4 +1,7 @@
+use crate::raft_server::actors::timer::TimerHandle;
 use crate::raft_server::actors::watchdog::WatchdogHandle;
+use rand::Rng;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug)]
@@ -7,6 +10,8 @@ struct Counter {
     watchdog: WatchdogHandle,
     votes_received: u64,
     votes_required: u64,
+    election_timer: Option<TimerHandle>,
+    election_timeout_range: (u64, u64),
 }
 
 #[derive(Debug)]
@@ -14,6 +19,7 @@ enum CounterMsg {
     RegisterVote { vote: Option<bool> },
     GetVotesReceived { respond_to: oneshot::Sender<u64> },
     ResetVotesReceived { respond_to: oneshot::Sender<()> },
+    StartElectionTimer { respond_to: oneshot::Sender<()> },
 }
 
 impl Counter {
@@ -22,12 +28,15 @@ impl Counter {
         receiver: mpsc::Receiver<CounterMsg>,
         watchdog: WatchdogHandle,
         votes_required: u64,
+        election_timeout_range: (u64, u64),
     ) -> Self {
         Counter {
             receiver,
             watchdog,
+            election_timeout_range,
             votes_received: 0,
             votes_required,
+            election_timer: None,
         }
     }
 
@@ -50,7 +59,25 @@ impl Counter {
                     respond_to.send(())
                 };
             }
+            CounterMsg::StartElectionTimer { respond_to } => {
+                let _ = {
+                    self.start_election_timer().await;
+                    respond_to.send(())
+                };
+            }
         }
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    async fn start_election_timer(&mut self) {
+        let election_timeout = Duration::from_millis(
+            rand::thread_rng()
+                .gen_range(self.election_timeout_range.0..self.election_timeout_range.1),
+        );
+        self.election_timer = Some(TimerHandle::run_once(
+            self.watchdog.clone(),
+            election_timeout,
+        ));
     }
 
     #[tracing::instrument(ret, level = "debug")]
@@ -64,8 +91,14 @@ impl Counter {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    async fn check_if_won(&self) {
+    async fn check_if_won(&mut self) {
         if self.votes_received.ge(&self.votes_required) {
+            match self.election_timer.take() {
+                None => {}
+                Some(timer) => {
+                    timer.stop_timer().await;
+                }
+            }
             self.watchdog.election_won().await;
         }
     }
@@ -78,9 +111,13 @@ pub struct CounterHandle {
 
 impl CounterHandle {
     #[tracing::instrument(ret, level = "debug")]
-    pub fn new(watchdog: WatchdogHandle, votes_required: u64) -> Self {
+    pub fn new(
+        watchdog: WatchdogHandle,
+        votes_required: u64,
+        election_timeout: (u64, u64),
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut counter = Counter::new(receiver, watchdog, votes_required);
+        let mut counter = Counter::new(receiver, watchdog, votes_required, election_timeout);
         tokio::spawn(async move { counter.run().await });
 
         Self { sender }
@@ -109,6 +146,15 @@ impl CounterHandle {
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn start_election_timer(&self) {
+        let (send, recv) = oneshot::channel();
+        let msg = CounterMsg::StartElectionTimer { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
 }
 
 //exclude candidate (-> insert only number of other nodes)
@@ -130,7 +176,8 @@ mod tests {
     async fn register_vote_test() {
         let watchdog = WatchdogHandle::default();
         let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog, votes_required, election_timeout);
         let vote = Some(true);
 
         assert_eq!(counter.get_votes_received().await, 0);
@@ -142,7 +189,8 @@ mod tests {
     async fn reset_votes_received_test() {
         let watchdog = WatchdogHandle::default();
         let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog, votes_required, election_timeout);
         let vote = Some(true);
 
         assert_eq!(counter.get_votes_received().await, 0);
@@ -158,7 +206,8 @@ mod tests {
     async fn election_won_test() {
         let watchdog = WatchdogHandle::default();
         let votes_required: u64 = 2;
-        let counter = CounterHandle::new(watchdog.clone(), votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog.clone(), votes_required, election_timeout);
         let vote = Some(true);
 
         // first vote -> no exit, since not enough votes
@@ -176,6 +225,22 @@ mod tests {
         _ = tokio::time::sleep(Duration::from_millis(5))=> {panic!()}
         }
     }
+
+    #[tokio::test]
+    async fn election_timeout_test() {
+        let watchdog = WatchdogHandle::default();
+        let votes_required: u64 = 2;
+        let election_timeout = (50, 80);
+        let counter = CounterHandle::new(watchdog.clone(), votes_required, election_timeout);
+
+        counter.start_election_timer().await;
+        let mut signal = watchdog.get_exit_receiver().await;
+        tokio::select! {
+        _ = signal.recv() => {},
+        _ = tokio::time::sleep(Duration::from_millis(100))=> {panic!()}
+        }
+    }
+    
 
     #[tokio::test]
     async fn calculate_required_votes_test() {

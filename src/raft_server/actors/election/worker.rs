@@ -121,7 +121,8 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog, votes_required, election_timeout);
         let node = NodeConfig {
             id: 0,
             ip: "".to_string(),
@@ -139,7 +140,8 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let votes_required: u64 = 3;
-        let counter = CounterHandle::new(watchdog, votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog, votes_required, election_timeout);
         let port = get_test_port().await;
         let node = NodeConfig {
             id: 0,

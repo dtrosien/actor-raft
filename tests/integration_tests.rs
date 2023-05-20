@@ -2,6 +2,7 @@ use crate::common::{get_test_db_paths, IntegrationTestApp};
 use actor_raft::raft_server::config::NodeConfig;
 use actor_raft::raft_server::raft_node::RaftNodeBuilder;
 use actor_raft::raft_server::raft_node::ServerState::{Candidate, Follower, Leader};
+use tracing::{debug, info};
 
 mod common;
 
@@ -32,6 +33,7 @@ async fn election_test() {
     let mut raft_node1 = RaftNodeBuilder::new(app1)
         .with_id(1)
         .with_port(40055)
+        .with_client_service_enabled(false)
         .with_nodes(vec![node_conf2.clone(), node_conf3.clone()])
         .with_log_db_path(db_paths.pop().unwrap().as_str())
         .with_term_db_path(db_paths.pop().unwrap().as_str())
@@ -44,6 +46,7 @@ async fn election_test() {
     let mut raft_node2 = RaftNodeBuilder::new(app2)
         .with_id(2)
         .with_port(40056)
+        .with_client_service_enabled(false)
         .with_nodes(vec![node_conf1.clone(), node_conf3.clone()])
         .with_log_db_path(db_paths.pop().unwrap().as_str())
         .with_term_db_path(db_paths.pop().unwrap().as_str())
@@ -56,6 +59,7 @@ async fn election_test() {
     let mut raft_node3 = RaftNodeBuilder::new(app3)
         .with_id(3)
         .with_port(40057)
+        .with_client_service_enabled(false)
         .with_nodes(vec![node_conf1.clone(), node_conf2.clone()])
         .with_log_db_path(db_paths.pop().unwrap().as_str())
         .with_term_db_path(db_paths.pop().unwrap().as_str())
@@ -64,28 +68,37 @@ async fn election_test() {
         .build()
         .await;
 
-    println!("{}", raft_node1.get_handles().term_store.get_term().await);
-    println!("{}", raft_node2.get_handles().term_store.get_term().await);
-    println!("{}", raft_node3.get_handles().term_store.get_term().await);
+    info!(
+        "term node1: {}",
+        raft_node1.get_handles().term_store.get_term().await
+    );
+    info!(
+        "term node2: {}",
+        raft_node2.get_handles().term_store.get_term().await
+    );
+    info!(
+        "term node3: {}",
+        raft_node3.get_handles().term_store.get_term().await
+    );
 
-    println!(
-        "{}",
+    info!(
+        "log index node1: {}",
         raft_node1
             .get_handles()
             .log_store
             .get_last_log_index()
             .await
     );
-    println!(
-        "{}",
+    info!(
+        "log index node2: {}",
         raft_node2
             .get_handles()
             .log_store
             .get_last_log_index()
             .await
     );
-    println!(
-        "{}",
+    info!(
+        "log index node3: {}",
         raft_node3
             .get_handles()
             .log_store
@@ -93,7 +106,6 @@ async fn election_test() {
             .await
     );
 
-    //
     // let i1 = raft_node1.get_node_server_handle();
     // let i2 = raft_node2.get_node_server_handle();
     // let i3 = raft_node3.get_node_server_handle();

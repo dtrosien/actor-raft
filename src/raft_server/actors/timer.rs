@@ -5,27 +5,35 @@ use tracing::info;
 
 #[derive(Debug)]
 struct Timer {
-    receiver: mpsc::Receiver<TimerMsg>,
+    hb_receiver: mpsc::Receiver<HeartbeatMsg>,
+    stop_receiver: mpsc::Receiver<StopMsg>,
     watchdog: WatchdogHandle,
     timeout: Duration,
     run_once: bool,
 }
 
 #[derive(Debug)]
-enum TimerMsg {
+enum HeartbeatMsg {
     Heartbeat,
+}
+
+#[derive(Debug)]
+enum StopMsg {
+    Stop,
 }
 
 impl Timer {
     #[tracing::instrument(ret, level = "debug")]
     fn new(
-        receiver: mpsc::Receiver<TimerMsg>,
+        hb_receiver: mpsc::Receiver<HeartbeatMsg>,
+        stop_receiver: mpsc::Receiver<StopMsg>,
         watchdog: WatchdogHandle,
         timeout: Duration,
         run_once: bool,
     ) -> Self {
         Timer {
-            receiver,
+            hb_receiver,
+            stop_receiver,
             watchdog,
             timeout,
             run_once,
@@ -35,23 +43,28 @@ impl Timer {
     async fn run(&mut self) {
         loop {
             tokio::select! {
-            Some(msg) = self.receiver.recv() => {
-            self.handle_message(msg);
+            Some(msg) = self.hb_receiver.recv() => {
+            self.handle_heartbeat_message(msg);
+            },
+            Some(_msg) = self.stop_receiver.recv() => {
+                  info!("timer stopped");
+                   break;
             },
             _timeout = tokio::time::sleep(self.timeout)=> {
-                info!("timeout");
                self.watchdog.timeout().await;
-                 if self.run_once {break}
+                 if self.run_once {info!("run once timeout");
+                        break;}
+                    else {info!("continuous timeout");}
             }
             }
         }
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    fn handle_message(&mut self, msg: TimerMsg) {
+    fn handle_heartbeat_message(&mut self, msg: HeartbeatMsg) {
         match msg {
-            TimerMsg::Heartbeat => {
-                println!("heartbeat")
+            HeartbeatMsg::Heartbeat => {
+                info!(" heartbeat registered")
             }
         }
     }
@@ -59,31 +72,47 @@ impl Timer {
 
 #[derive(Clone, Debug)]
 pub struct TimerHandle {
-    sender: mpsc::Sender<TimerMsg>,
+    hb_sender: mpsc::Sender<HeartbeatMsg>,
+    stop_sender: mpsc::Sender<StopMsg>,
 }
 
 impl TimerHandle {
     #[tracing::instrument(ret, level = "debug")]
     pub fn new(watchdog: WatchdogHandle, timeout: Duration) -> Self {
-        let (sender, receiver) = mpsc::channel(1);
-        let mut timer = Timer::new(receiver, watchdog, timeout, false);
+        let (hb_sender, hb_receiver) = mpsc::channel(1);
+        let (stop_sender, stop_receiver) = mpsc::channel(1);
+        let mut timer = Timer::new(hb_receiver, stop_receiver, watchdog, timeout, false);
 
         tokio::spawn(async move { timer.run().await });
 
-        Self { sender }
+        Self {
+            hb_sender,
+            stop_sender,
+        }
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    pub fn run_once(watchdog: WatchdogHandle, timeout: Duration) {
-        let (_sender, receiver) = mpsc::channel(1);
-        let mut timer = Timer::new(receiver, watchdog, timeout, true);
+    pub fn run_once(watchdog: WatchdogHandle, timeout: Duration) -> Self {
+        let (hb_sender, hb_receiver) = mpsc::channel(1);
+        let (stop_sender, stop_receiver) = mpsc::channel(1);
+        let mut timer = Timer::new(hb_receiver, stop_receiver, watchdog, timeout, true);
         tokio::spawn(async move { timer.run().await });
+        Self {
+            hb_sender,
+            stop_sender,
+        }
     }
 
     #[tracing::instrument(ret, level = "debug")]
     pub async fn register_heartbeat(&self) {
-        let msg = TimerMsg::Heartbeat;
-        let _ = self.sender.send(msg).await;
+        let msg = HeartbeatMsg::Heartbeat;
+        let _ = self.hb_sender.send(msg).await;
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn stop_timer(&self) {
+        let msg = StopMsg::Stop;
+        let _ = self.stop_sender.send(msg).await;
     }
 }
 
@@ -129,6 +158,19 @@ mod tests {
         tokio::select! {
         _ = signal.recv() => {},
         _ = tokio::time::sleep(Duration::from_millis(20))=> {panic!()}
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_timer_test() {
+        // asserts if the shutdown signal is send from the watchdog after a timeout
+        let watchdog = WatchdogHandle::default();
+        let timer = TimerHandle::new(watchdog.clone(), Duration::from_millis(5));
+        let mut signal = watchdog.get_exit_receiver().await;
+        timer.stop_timer().await;
+        tokio::select! {
+        _ = signal.recv() => {panic!()},
+        _ = tokio::time::sleep(Duration::from_millis(10))=> {}
         }
     }
 }

@@ -13,6 +13,7 @@ struct Initiator {
     receiver: mpsc::Receiver<InitiatorMsg>,
     term_store: TermStoreHandle,
     workers: BTreeMap<u64, WorkerHandle>,
+    counter: CounterHandle,
     db: RaftDb,
     voted_for: Option<u64>,
     id: u64,
@@ -72,6 +73,7 @@ impl Initiator {
             receiver,
             term_store: term,
             workers,
+            counter,
             db,
             voted_for,
             id,
@@ -119,6 +121,9 @@ impl Initiator {
 
     #[tracing::instrument(ret, level = "debug")]
     async fn start_election(&mut self) {
+        // start timer
+        self.counter.start_election_timer().await;
+
         //increment current term
         self.term_store.increment_term().await;
         //vote for self
@@ -267,7 +272,8 @@ mod tests {
             leader_commit: 0,
         };
         let votes_required = calculate_required_votes(config.nodes.len() as u64);
-        let counter = CounterHandle::new(watchdog, votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog, votes_required, election_timeout);
         let initiator = InitiatorHandle::new(
             term_store,
             counter,
@@ -300,7 +306,8 @@ mod tests {
             leader_commit: 0,
         };
         let votes_required = calculate_required_votes(config.nodes.len() as u64);
-        let counter = CounterHandle::new(watchdog, votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog, votes_required, election_timeout);
         let initiator = InitiatorHandle::new(
             term_store,
             counter,
@@ -337,7 +344,8 @@ mod tests {
             leader_commit: 0,
         };
         let votes_required = calculate_required_votes(config.nodes.len() as u64);
-        let counter = CounterHandle::new(watchdog, votes_required);
+        let election_timeout = (150, 300);
+        let counter = CounterHandle::new(watchdog, votes_required, election_timeout);
         let initiator = InitiatorHandle::new(
             term_store,
             counter.clone(),

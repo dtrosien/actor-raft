@@ -133,7 +133,7 @@ impl RaftNodeBuilder {
             self.config.clone(),
             self.s_shutdown.clone(),
             self.config.node_server_enabled,
-            self.config.node_server_enabled,
+            self.config.client_service_enabled,
         )
         .await
     }
@@ -192,12 +192,12 @@ impl RaftNode {
         } else {
             None
         };
-        let client_server = if node_server_enabled {
+        let client_server = if client_service_enabled {
             init_client_server(
                 s_shutdown.subscribe(),
                 handles.clone(),
                 config.ip.clone(),
-                config.port,
+                config.service_port,
             )
             .await
         } else {
@@ -278,6 +278,10 @@ impl RaftNode {
 
     pub async fn restart_node_server(&mut self) -> &RaftNode {
         let r_shutdown = self.s_shutdown.subscribe();
+        match self.node_server.take() {
+            None => {}
+            Some(server) => server.abort(),
+        }
         self.node_server = init_node_server(
             r_shutdown,
             self.handles.clone(),
@@ -290,11 +294,15 @@ impl RaftNode {
 
     pub async fn restart_client_server(&mut self) -> &RaftNode {
         let r_shutdown = self.s_shutdown.subscribe();
+        match self.client_server.take() {
+            None => {}
+            Some(server) => server.abort(),
+        }
         self.client_server = init_client_server(
             r_shutdown,
             self.handles.clone(),
             self.config.ip.clone(),
-            self.config.port,
+            self.config.service_port,
         )
         .await;
         self
@@ -331,9 +339,9 @@ mod tests {
         raft_node.run().await.run().await;
 
         let rh = tokio::spawn(async move { raft_node.run_continuously().await });
-        let hb_interval = Duration::from_millis(400);
+        let hb_interval = Duration::from_millis(50);
         tokio::select! {
-            _ = rh => {},
+            _ = rh => {panic!()},
             _ = tokio::time::sleep(hb_interval) => {},
 
         }

@@ -47,7 +47,12 @@ impl RaftHandles {
         let state_timer = TimerHandle::new(watchdog.clone(), state_timeout);
 
         let votes_required = calculate_required_votes(config.nodes.len() as u64);
-        let counter = CounterHandle::new(watchdog.clone(), votes_required);
+
+        let counter = CounterHandle::new(
+            watchdog.clone(),
+            votes_required,
+            config.election_timeout_range,
+        );
         let initiator = InitiatorHandle::new(
             term_store.clone(),
             counter.clone(),
@@ -135,10 +140,6 @@ impl RaftHandles {
         if self.state_store.get_state().await == ServerState::Candidate {
             info!("start election");
             self.initiator.start_election().await;
-            let election_timeout = Duration::from_millis(rand::thread_rng().gen_range(
-                self.config.election_timeout_range.0..self.config.election_timeout_range.1,
-            ));
-            TimerHandle::run_once(self.watchdog.clone(), election_timeout);
         }
     }
 

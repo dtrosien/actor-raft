@@ -1,6 +1,7 @@
 use crate::raft_server::actors::state_store::StateStoreHandle;
 use crate::raft_server::raft_node::ServerState;
 use tokio::sync::{broadcast, mpsc, oneshot};
+use tracing::info;
 
 #[derive(Debug)]
 struct Watchdog {
@@ -49,16 +50,16 @@ impl Watchdog {
                 let _ = respond_to.send(self.state_store.clone());
             }
             WatchdogMsg::Timeout => {
-                let _ = self.exit_sender.send(());
                 self.state_store.change_state(ServerState::Candidate).await;
+                let _ = self.exit_sender.send(());
             }
             WatchdogMsg::TermError => {
-                let _ = self.exit_sender.send(());
                 self.state_store.change_state(ServerState::Follower).await;
+                let _ = self.exit_sender.send(());
             }
             WatchdogMsg::ElectionWon => {
-                let _ = self.exit_sender.send(());
                 self.state_store.change_state(ServerState::Leader).await;
+                let _ = self.exit_sender.send(());
             }
         }
     }
@@ -91,7 +92,7 @@ impl WatchdogHandle {
 
     #[tracing::instrument(ret, level = "debug")]
     pub async fn timeout(&self) {
-        println!("Watchdog got timeout signal");
+        info!("Watchdog got timeout signal");
         let msg = WatchdogMsg::Timeout;
         self.sender
             .send(msg)
@@ -101,7 +102,7 @@ impl WatchdogHandle {
 
     #[tracing::instrument(ret, level = "debug")]
     pub async fn term_error(&self) {
-        println!("Watchdog got term error signal");
+        info!("Watchdog got term error signal");
         let msg = WatchdogMsg::TermError;
         self.sender
             .send(msg)
@@ -111,7 +112,7 @@ impl WatchdogHandle {
 
     #[tracing::instrument(ret, level = "debug")]
     pub async fn election_won(&self) {
-        println!("Watchdog got election won signal");
+        info!("Watchdog got election won signal");
         let msg = WatchdogMsg::ElectionWon;
         self.sender
             .send(msg)

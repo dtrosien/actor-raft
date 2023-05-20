@@ -3,6 +3,7 @@ use crate::raft_server_rpc::{AppendEntriesRequest, RequestVoteRequest};
 use std::error::Error;
 use std::time::Duration;
 use tonic::transport::Channel;
+use tracing::info;
 
 #[derive(Clone, Debug)]
 pub struct Reply {
@@ -26,7 +27,7 @@ pub async fn request_vote(
 
     let response = client.request_votes(request).await?;
     let response_arguments = response.into_inner();
-    println!("vote granted: {}", response_arguments.vote_granted);
+    info!("vote granted: {}", response_arguments.vote_granted);
     Ok(Reply {
         term: response_arguments.term,
         success_or_granted: response_arguments.vote_granted,
@@ -49,7 +50,7 @@ pub async fn append_entry(
 
     let response = client.append_entries(request).await?;
     let response_arguments = response.into_inner();
-    println!("replicated: {}", response_arguments.success);
+    info!("replicated: {}", response_arguments.success);
 
     Ok(Reply {
         term: response_arguments.term,
