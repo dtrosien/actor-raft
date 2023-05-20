@@ -272,7 +272,7 @@ impl RaftNode {
             info!("run n={}", i);
             self.run().await;
         }
-        self.s_shutdown.send(()).unwrap();
+        let _ = self.s_shutdown.send(());
         self
     }
 
