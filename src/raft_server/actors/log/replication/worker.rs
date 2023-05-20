@@ -142,7 +142,7 @@ impl Worker {
             }
             Err(_) => {
                 // nothing to do, request will be retried with next heartbeat
-                // todo [feature] implement dead node logic to prevent unnecessary rpc calls
+                // todo [later feature] implement dead node logic to prevent unnecessary rpc calls
                 println!("error while sending append entry rpc to {}", self.node.ip)
             }
         }

@@ -315,7 +315,7 @@ impl RaftNode {
             info!("send heartbeat");
             self.handles.send_heartbeat().await;
             // to prevent timeout leader must trigger his own timer
-            self.handles.state_timer.register_heartbeat().await; // todo if possible maybe trigger this in append entry client (when follower answer)
+            self.handles.state_timer.register_heartbeat().await; // todo [later feature] if possible maybe trigger this in append entry client (when follower answer)
             tokio::time::sleep(hb_interval).await;
         }
         self

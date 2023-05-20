@@ -1,1 +1,1 @@
-// todo implement store registered clients
+// todo [crucial feature] implement store registered clients

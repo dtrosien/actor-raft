@@ -153,7 +153,7 @@ impl LogStore {
             Ok(result) => {
                 if let Some(old_entry) = result {
                     if entry_term.ne(&old_entry.term) {
-                        //todo [feature] think of better error handling for last index, just dropping complete db is not possible (commit index etc)
+                        //todo [later feature] think of better error handling for last index, just dropping complete db is not possible (commit index etc)
                         let last_index = self
                             .db
                             .read_last_entry()
