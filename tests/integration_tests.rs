@@ -36,7 +36,7 @@ async fn election_test() {
         .with_log_db_path(db_paths.pop().unwrap().as_str())
         .with_term_db_path(db_paths.pop().unwrap().as_str())
         .with_vote_db_path(db_paths.pop().unwrap().as_str())
-        .with_initial_state(Candidate)
+        .with_initial_state(Follower)
         .build()
         .await;
 
@@ -64,18 +64,45 @@ async fn election_test() {
         .build()
         .await;
 
-    let i1 = raft_node1.get_node_server_handle();
-    let i2 = raft_node2.get_node_server_handle();
-    let i3 = raft_node3.get_node_server_handle();
+    println!("{}", raft_node1.get_handles().term_store.get_term().await);
+    println!("{}", raft_node2.get_handles().term_store.get_term().await);
+    println!("{}", raft_node3.get_handles().term_store.get_term().await);
 
-    tokio::join!(
-        raft_node1.run_n_times(10),
-        raft_node2.run_n_times(10),
-        raft_node3.run_n_times(10),
-        i1.unwrap(),
-        i2.unwrap(),
-        i3.unwrap()
+    println!(
+        "{}",
+        raft_node1
+            .get_handles()
+            .log_store
+            .get_last_log_index()
+            .await
     );
+    println!(
+        "{}",
+        raft_node2
+            .get_handles()
+            .log_store
+            .get_last_log_index()
+            .await
+    );
+    println!(
+        "{}",
+        raft_node3
+            .get_handles()
+            .log_store
+            .get_last_log_index()
+            .await
+    );
+
+    //
+    // let i1 = raft_node1.get_node_server_handle();
+    // let i2 = raft_node2.get_node_server_handle();
+    // let i3 = raft_node3.get_node_server_handle();
+    //
+    // let t1 = tokio::spawn(async move { raft_node1.run_continuously().await });
+    // let t2 = tokio::spawn(async move { raft_node2.run_continuously().await });
+    // let t3 = tokio::spawn(async move { raft_node3.run_continuously().await });
+    //
+    // tokio::join!(t1, t2, t3, i1.unwrap(), i2.unwrap(), i3.unwrap());
 }
 
 #[tokio::test]

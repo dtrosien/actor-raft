@@ -34,8 +34,6 @@ pub struct RaftNodeBuilder {
     config: Config,
     s_shutdown: Sender<()>,
     app: Box<dyn App>,
-    node_server_enabled: bool,
-    client_service_enabled: bool,
 }
 
 impl RaftNodeBuilder {
@@ -46,8 +44,6 @@ impl RaftNodeBuilder {
             config,
             s_shutdown,
             app,
-            node_server_enabled: true,
-            client_service_enabled: true,
         }
     }
 
@@ -57,12 +53,12 @@ impl RaftNodeBuilder {
     }
 
     pub fn with_client_service_enabled(&mut self, enable: bool) -> &mut RaftNodeBuilder {
-        self.client_service_enabled = enable;
+        self.config.client_service_enabled = enable;
         self
     }
 
     pub fn with_rpc_server_enabled(&mut self, enable: bool) -> &mut RaftNodeBuilder {
-        self.node_server_enabled = enable;
+        self.config.node_server_enabled = enable;
         self
     }
 
@@ -136,8 +132,8 @@ impl RaftNodeBuilder {
         RaftNode::build(
             self.config.clone(),
             self.s_shutdown.clone(),
-            self.node_server_enabled,
-            self.client_service_enabled,
+            self.config.node_server_enabled,
+            self.config.node_server_enabled,
         )
         .await
     }

@@ -26,7 +26,7 @@ pub async fn init_node_server(
 
     let addr = format!("{}:{}", ip, port).parse().unwrap();
 
-    Some(build_rpc_server(r_shutdown, addr, node_service, "server".to_string()).await)
+    Some(build_rpc_server(r_shutdown, addr, node_service, "node".to_string()).await)
 }
 
 pub async fn init_client_server(
