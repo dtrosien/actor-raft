@@ -77,8 +77,8 @@ impl Initiator {
             db,
             voted_for,
             id,
-            last_log_index: state_meta.previous_log_index,
-            last_log_term: state_meta.previous_log_term,
+            last_log_index: state_meta.last_log_index,
+            last_log_term: state_meta.last_log_term,
         }
     }
 
@@ -265,8 +265,8 @@ mod tests {
         let term_store = TermStoreHandle::new(watchdog.clone(), test_db_paths.pop().unwrap());
         let config = get_test_config().await;
         let state_meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 0,
+            last_log_index: 0,
+            last_log_term: 0,
             term: 0,
             id: 0,
             leader_commit: 0,
@@ -299,8 +299,8 @@ mod tests {
         let config = get_test_config().await;
 
         let state_meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 0,
+            last_log_index: 0,
+            last_log_term: 0,
             term: 0,
             id: 0,
             leader_commit: 0,
@@ -337,8 +337,8 @@ mod tests {
 
         let config = get_test_config().await;
         let state_meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 0,
+            last_log_index: 0,
+            last_log_term: 0,
             term: 0,
             id: 0,
             leader_commit: 0,

@@ -5,6 +5,7 @@ use crate::raft_server_rpc::{
 };
 use std::collections::VecDeque;
 use tonic::{Request, Response, Status};
+use tracing::warn;
 
 #[derive(Debug)]
 pub struct RaftNodeServer {
@@ -43,6 +44,10 @@ impl RaftServerRpc for RaftNodeServer {
                 term: current_term,
                 success: false,
             };
+            warn!(
+                "term not ok! current term = {}, rpc term= {}",
+                current_term, rpc_arguments.term
+            );
             return Ok(Response::new(reply));
         }
 
@@ -53,6 +58,12 @@ impl RaftServerRpc for RaftNodeServer {
             .last_entry_match(rpc_arguments.prev_log_index, rpc_arguments.prev_log_term)
             .await
         {
+            let li = self.handles.log_store.get_last_log_index().await; // todo [refactor] integrate warning in function above?
+            let lt = self.handles.log_store.get_last_log_term().await;
+            warn!(
+                "last entry does not match: rpc prev_log_index = {}, rpc prev_log_term= {}, own prev_log_index: {}, own prev_log_term {}",
+                rpc_arguments.prev_log_index, rpc_arguments.prev_log_term, li,lt
+            );
             return deny_append_request(current_term);
         }
 
@@ -168,8 +179,8 @@ mod tests {
         term_store.reset_term().await;
 
         let state_meta = StateMeta {
-            previous_log_index: 0, // only matters for replicator and voter
-            previous_log_term: 0,  //only matters for replicator and voter
+            last_log_index: 0, // only matters for replicator and voter
+            last_log_term: 0,  //only matters for replicator and voter
             term: 0,
             id: 0,
             leader_commit: 0,
@@ -322,8 +333,8 @@ mod tests {
         term_store.reset_term().await;
 
         let state_meta = StateMeta {
-            previous_log_index: 0, // only matters for replicator
-            previous_log_term: 0,  // only matters for replicator
+            last_log_index: 0, // only matters for replicator
+            last_log_term: 0,  // only matters for replicator
             term: 0,
             id: 0,
             leader_commit: 0,

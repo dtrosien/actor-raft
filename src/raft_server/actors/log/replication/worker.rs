@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 
 use crate::raft_server::state_meta::StateMeta;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 #[derive(Debug)]
 struct Worker {
@@ -129,8 +129,8 @@ impl Worker {
             Ok(response) => {
                 self.term_store.check_term(response.term).await;
                 if response.success_or_granted {
-                    self.state_meta.previous_log_index = last_entry_index;
-                    self.state_meta.previous_log_term = last_entry_term;
+                    self.state_meta.last_log_index = last_entry_index;
+                    self.state_meta.last_log_term = last_entry_term;
                     self.state_meta.leader_commit = self
                         .executor
                         .register_replication_success(self.node.id, last_entry_index)
@@ -138,6 +138,10 @@ impl Worker {
                     self.entries_cache.clear();
                 } else {
                     // new try with next heartbeat
+                    warn!(
+                        "log not up to date for {}, try to append previous entry with index : {}, term: {}",
+                        self.node.id, self.state_meta.last_log_index,self.state_meta.last_log_term
+                    );
                     self.append_previous_entry_to_log_cache().await
                 }
             }
@@ -145,8 +149,8 @@ impl Worker {
                 // nothing to do, request will be retried with next heartbeat
                 // todo [later feature] implement dead node logic to prevent unnecessary rpc calls
                 error!(
-                    "error while sending append entry rpc to {},{}",
-                    self.node.ip, self.node.port
+                    "error while sending append entry rpc to node {} with address: {},{}",
+                    self.node.id, self.node.ip, self.node.port
                 )
             }
         }
@@ -154,23 +158,34 @@ impl Worker {
 
     #[tracing::instrument(ret, level = "debug")]
     async fn append_previous_entry_to_log_cache(&mut self) {
-        // read previous entry from db
-        if let Some(previous_entry) = self
+        // todo [refactor] clean up
+
+        match self
             .log_store
-            .read_entry(self.state_meta.previous_log_index)
+            .read_previous_entry(self.state_meta.last_log_index)
             .await
         {
-            // add entry to back of the cache queue
-            self.entries_cache.push_back(previous_entry);
-            // update log metadata
-            if let Some(pre_previous_entry) = self
-                .log_store
-                .read_previous_entry(self.state_meta.previous_log_index)
-                .await
-            {
-                self.state_meta.previous_log_index = pre_previous_entry.index;
-                self.state_meta.previous_log_term = pre_previous_entry.term;
-            };
+            Some(previous_entry) => {
+                info!("previous entry found with index: {}", previous_entry.index);
+                // add entry to back of the cache queue
+                self.entries_cache.push_back(previous_entry.clone());
+                // update log metadata
+                self.state_meta.last_log_index = previous_entry.index;
+                self.state_meta.last_log_term = previous_entry.term;
+            }
+            None => {
+                // check if beginning of log was reached
+                if self.state_meta.last_log_index <= 1 {
+                    self.state_meta.last_log_index = 0;
+                    self.state_meta.last_log_term = 0;
+                } else {
+                    // this should not happen
+                    panic!(
+                        "no previous entry found for index: {} in worker for node{} of leader {}",
+                        self.state_meta.last_log_index, self.node.id, self.state_meta.id
+                    )
+                }
+            }
         }
     }
 
@@ -187,8 +202,8 @@ impl Worker {
             None => {
                 self.send_append_request(
                     request,
-                    self.state_meta.previous_log_index,
-                    self.state_meta.previous_log_term,
+                    self.state_meta.last_log_index,
+                    self.state_meta.last_log_term,
                 )
                 .await;
             }
@@ -204,8 +219,8 @@ impl Worker {
         AppendEntriesRequest {
             term: self.state_meta.term,
             leader_id: self.state_meta.id,
-            prev_log_index: self.state_meta.previous_log_index,
-            prev_log_term: self.state_meta.previous_log_term,
+            prev_log_index: self.state_meta.last_log_index, // be not confused by naming: the current last entry will be the previous entry of the upcoming request
+            prev_log_term: self.state_meta.last_log_term,
             entries: Vec::from(self.entries_cache.clone()),
             leader_commit: self.state_meta.leader_commit,
         }
@@ -310,8 +325,8 @@ mod tests {
 
         // initialize state
         let meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 1,
+            last_log_index: 0,
+            last_log_term: 1,
             term: 1,
             id: 0,
             leader_commit: 0,
@@ -330,8 +345,8 @@ mod tests {
 
         // initialize state
         let meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 1,
+            last_log_index: 0,
+            last_log_term: 1,
             term: 1,
             id: 0,
             leader_commit: 0,
@@ -349,8 +364,8 @@ mod tests {
 
         // start actual test
 
-        assert_eq!(worker.get_state_meta().await.previous_log_index, 0);
-        assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+        assert_eq!(worker.get_state_meta().await.last_log_index, 0);
+        assert_eq!(worker.get_state_meta().await.last_log_term, 1);
         assert_eq!(worker.get_state_meta().await.leader_commit, 0);
 
         let test_future = async {
@@ -365,8 +380,8 @@ mod tests {
             _ = start_test_server(port, TestServerTrue {}) => panic!("server returned first"),
             _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
             _ = test_future => {
-                assert_eq!(worker.get_state_meta().await.previous_log_index, 1);
-                assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+                assert_eq!(worker.get_state_meta().await.last_log_index, 1);
+                assert_eq!(worker.get_state_meta().await.last_log_term, 1);
                 assert_eq!(worker.get_state_meta().await.leader_commit, 1);
                 assert!(worker.get_cached_entries().await.is_empty())
                 }
@@ -381,8 +396,8 @@ mod tests {
 
         // initialize state
         let meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 1,
+            last_log_index: 0,
+            last_log_term: 1,
             term: 1,
             id: 0,
             leader_commit: 0,
@@ -406,8 +421,8 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
 
-        assert_eq!(worker.get_state_meta().await.previous_log_index, 0);
-        assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+        assert_eq!(worker.get_state_meta().await.last_log_index, 0);
+        assert_eq!(worker.get_state_meta().await.last_log_term, 1);
         assert_eq!(worker.get_state_meta().await.leader_commit, 0);
         assert_eq!(worker.get_cached_entries().await.len(), 100);
 
@@ -423,8 +438,8 @@ mod tests {
             _ = start_test_server(port, TestServerTrue {}) => panic!("server returned first"),
             _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
             _ = test_future => {
-                assert_eq!(worker.get_state_meta().await.previous_log_index, 100);
-                assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+                assert_eq!(worker.get_state_meta().await.last_log_index, 100);
+                assert_eq!(worker.get_state_meta().await.last_log_term, 1);
                 assert_eq!(worker.get_state_meta().await.leader_commit, 100);
                 assert!(worker.get_cached_entries().await.is_empty())
                 }
@@ -439,8 +454,8 @@ mod tests {
 
         // initialize state
         let meta = StateMeta {
-            previous_log_index: 10,
-            previous_log_term: 1,
+            last_log_index: 10,
+            last_log_term: 1,
             term: 1,
             id: 0,
             leader_commit: 10,
@@ -474,8 +489,8 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
 
-        assert_eq!(worker.get_state_meta().await.previous_log_index, 10);
-        assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+        assert_eq!(worker.get_state_meta().await.last_log_index, 10);
+        assert_eq!(worker.get_state_meta().await.last_log_term, 1);
         assert_eq!(worker.get_state_meta().await.leader_commit, 10);
         assert_eq!(worker.get_cached_entries().await.len(), 5);
 
@@ -495,12 +510,12 @@ mod tests {
             _ = start_test_server(port, TestServerFalse {}) => panic!("server returned first"),
             _ = error_recv.recv() => panic!("exit was fired, probably because of term error"),
             _ = test_future => {
-                assert_eq!(worker.get_state_meta().await.previous_log_index, 8);
-                assert_eq!(worker.get_state_meta().await.previous_log_term, 1);
+                assert_eq!(worker.get_state_meta().await.last_log_index, 8);
+                assert_eq!(worker.get_state_meta().await.last_log_term, 1);
                 assert_eq!(worker.get_state_meta().await.leader_commit, 10);
                 assert_eq!(worker.get_cached_entries().await.len(), 7);
                 assert_eq!(worker.get_cached_entries().await.pop_front().unwrap().index ,15);
-                assert_eq!(worker.get_cached_entries().await.pop_back().unwrap().index, 9);
+                assert_eq!(worker.get_cached_entries().await.pop_back().unwrap().index, 8);
                 }
         }
     }

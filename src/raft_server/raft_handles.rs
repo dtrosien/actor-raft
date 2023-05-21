@@ -154,7 +154,7 @@ impl RaftHandles {
         // election
         self.initiator.reset_voted_for().await;
         self.initiator
-            .set_last_log_meta(state_meta.previous_log_index, state_meta.previous_log_term)
+            .set_last_log_meta(state_meta.last_log_index, state_meta.last_log_term)
             .await;
         self.counter.reset_votes_received().await;
         // replication
@@ -177,12 +177,12 @@ mod tests {
         let term_store = TermStoreHandle::new(wd.clone(), config.term_db_path.clone());
         let log_store = LogStoreHandle::new(config.log_db_path.clone());
 
-        let previous_log_term = log_store.get_last_log_term().await;
-        let previous_log_index = log_store.get_last_log_index().await;
+        let last_log_index = log_store.get_last_log_index().await;
+        let last_log_term = log_store.get_last_log_term().await;
 
         let state_meta = StateMeta {
-            previous_log_index,
-            previous_log_term,
+            last_log_index,
+            last_log_term,
             term: 0,
             id: 0,
             leader_commit: 0,

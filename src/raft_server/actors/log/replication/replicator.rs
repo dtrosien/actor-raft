@@ -235,8 +235,8 @@ mod tests {
         let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
             prepare_test_dependencies().await;
         let state_meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 0,
+            last_log_index: 0,
+            last_log_term: 0,
             term: 0,
             id: 0,
             leader_commit: 0,
@@ -342,8 +342,8 @@ mod tests {
         let config = get_test_config().await;
 
         let state_meta = StateMeta {
-            previous_log_index: 0,
-            previous_log_term: 0,
+            last_log_index: 0,
+            last_log_term: 0,
             term: 1,
             id: 0,
             leader_commit: 0,
