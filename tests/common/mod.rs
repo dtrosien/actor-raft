@@ -141,7 +141,6 @@ pub async fn prepare_cluster(
 // for integration testing a new db will be created for the "same" node
 // (https://github.com/spacejam/sled/issues/1234)
 pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) -> RaftNode {
-    info!("start seerver !!!!!!!!!!!!!");
     let app = Box::new(IntegrationTestApp {});
     let mut db_paths = get_test_db_paths(3).await;
     let node = RaftNodeBuilder::new(app)
