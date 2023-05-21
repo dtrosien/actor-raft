@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
-use tracing::Subscriber;
+use tracing::{info, Subscriber};
 
 #[derive(Debug)]
 pub struct IntegrationTestApp {}
@@ -137,13 +137,14 @@ pub async fn prepare_cluster(
 }
 
 // prepares a node from a (previous) node config.
-// IMPORTANT: since sled db does not support closing and opening dbs rapidly 
+// IMPORTANT: since sled db does not support closing and opening dbs rapidly
 // for integration testing a new db will be created for the "same" node
 // (https://github.com/spacejam/sled/issues/1234)
 pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) -> RaftNode {
+    info!("start seerver !!!!!!!!!!!!!");
     let app = Box::new(IntegrationTestApp {});
     let mut db_paths = get_test_db_paths(3).await;
-    RaftNodeBuilder::new(app)
+    let node = RaftNodeBuilder::new(app)
         .with_id(config.id)
         .with_port(config.port)
         .with_shutdown(s_shutdown)
@@ -154,5 +155,10 @@ pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) ->
         .with_vote_db_path(db_paths.pop().unwrap().as_str())
         .with_initial_state(Follower)
         .build()
-        .await
+        .await;
+    let h = node.get_handles();
+    h.term_store.reset_term().await;
+    h.log_store.reset_log().await;
+    h.initiator.reset_voted_for().await;
+    node
 }
