@@ -130,7 +130,6 @@ async fn replication_test() {
 
 #[tokio::test]
 async fn failover_test() {
-    // todo [crucial test] write test: replicate entry -> shutdown one server -> replicate entry -> restart server -> all match
     enable_tracing().await;
 
     // prepare nodes
@@ -255,8 +254,6 @@ async fn failover_test() {
                 assert_eq!(entry.index, 2);
             }
         }
-
-        // todo works till here + it seems that node 1 cannot accept entries after restart -> more logging in append entry rpc
 
         info!("prepare node 1 as failover node again ");
         let mut failover_node =
