@@ -356,10 +356,10 @@ mod tests {
 
         let test_future = async {
             // sleep necessary to make sure that server is up
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            tokio::time::sleep(Duration::from_millis(30)).await;
             initiator.start_election().await;
             // sleep necessary to make sure that vote is processed before getting the count
-            tokio::time::sleep(Duration::from_millis(60)).await;
+            tokio::time::sleep(Duration::from_millis(70)).await;
         };
 
         // wait for test future or servers to return
