@@ -1,8 +1,13 @@
-use actor_raft::raft_server::raft_node::App;
+use actor_raft::raft_server::config::{Config, NodeConfig};
+use actor_raft::raft_server::raft_handles::RaftHandles;
+use actor_raft::raft_server::raft_node::ServerState::{Candidate, Follower};
+use actor_raft::raft_server::raft_node::{App, RaftNode, RaftNodeBuilder};
 use actor_raft::raft_server_rpc::append_entries_request::Entry;
 use once_cell::sync::Lazy;
+use std::collections::VecDeque;
 use std::error::Error;
-use tokio::sync::Mutex;
+use tokio::sync::broadcast::Sender;
+use tokio::sync::{broadcast, Mutex};
 use tracing::Subscriber;
 
 #[derive(Debug)]
@@ -53,4 +58,96 @@ pub async fn enable_tracing() {
             .init();
         *tracing_guard = true
     }
+}
+
+// used to create test clusters for integration testing
+// first node (id=0) will be leader after first run iteration when enabled. (this will be the last node to pop from Vec!)
+pub async fn prepare_cluster(
+    num_nodes: u16,
+    predetermined_leader: bool,
+) -> (Vec<RaftNode>, Vec<RaftHandles>, VecDeque<Sender<()>>) {
+    let mut ports: Vec<u16> = Vec::new();
+    let mut node_configs: Vec<NodeConfig> = Vec::new();
+    let mut raft_nodes: Vec<RaftNode> = Vec::new(); // todo switch to map?
+    let mut handles: Vec<RaftHandles> = Vec::new();
+    let mut db_paths = get_test_db_paths(3 * num_nodes).await;
+    let mut shutdown_receivers: VecDeque<Sender<()>> = VecDeque::new();
+
+    for i in 0..num_nodes {
+        let s_shutdown = broadcast::channel(1).0;
+        let port = get_test_port().await;
+        let node_config = NodeConfig {
+            id: i as u64,
+            ip: "[::1]".to_string(),
+            port,
+        };
+        ports.push(port);
+        node_configs.push(node_config);
+        shutdown_receivers.push_front(s_shutdown);
+    }
+
+    // clone receivers to be able to return them later
+    let mut copy_of_receivers = shutdown_receivers.clone();
+
+    // prepare raft nodes
+    for i in 0..num_nodes {
+        let app = Box::new(IntegrationTestApp {});
+
+        let mut other_nodes = node_configs.clone();
+        other_nodes.remove(i as usize);
+
+        let raft_node = if i == 0 && predetermined_leader {
+            RaftNodeBuilder::new(app)
+                .with_id(i as u64)
+                .with_port(*ports.get(i as usize).unwrap())
+                .with_shutdown(copy_of_receivers.pop_back().unwrap())
+                .with_client_service_enabled(false)
+                .with_nodes(other_nodes)
+                .with_log_db_path(db_paths.pop().unwrap().as_str())
+                .with_term_db_path(db_paths.pop().unwrap().as_str())
+                .with_vote_db_path(db_paths.pop().unwrap().as_str())
+                .with_initial_state(Candidate)
+                .build()
+                .await
+        } else {
+            RaftNodeBuilder::new(app)
+                .with_id(i as u64)
+                .with_port(*ports.get(i as usize).unwrap())
+                .with_shutdown(copy_of_receivers.pop_back().unwrap())
+                .with_client_service_enabled(false)
+                .with_nodes(other_nodes)
+                .with_log_db_path(db_paths.pop().unwrap().as_str())
+                .with_term_db_path(db_paths.pop().unwrap().as_str())
+                .with_vote_db_path(db_paths.pop().unwrap().as_str())
+                .build()
+                .await
+        };
+        handles.push(raft_node.get_handles());
+        raft_nodes.push(raft_node);
+    }
+
+    // reset dbs from previous runs
+    for h in handles.clone() {
+        h.term_store.reset_term().await;
+        h.log_store.reset_log().await;
+        h.initiator.reset_voted_for().await;
+    }
+
+    (raft_nodes, handles, shutdown_receivers)
+}
+
+pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) -> RaftNode {
+    let app = Box::new(IntegrationTestApp {});
+    RaftNodeBuilder::new(app)
+        .with_id(config.id)
+        .with_port(config.port)
+        .with_shutdown(s_shutdown)
+        .with_client_service_enabled(false)
+        .with_nodes(config.nodes)
+        .with_log_db_path(config.log_db_path.as_str())
+        .with_term_db_path(config.term_db_path.as_str())
+        .with_vote_db_path(config.vote_db_path.as_str())
+        .with_initial_state(Follower)
+        .build()
+        .await
 }
