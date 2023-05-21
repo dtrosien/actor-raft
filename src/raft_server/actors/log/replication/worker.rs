@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 
 use crate::raft_server::state_meta::StateMeta;
 use tokio::sync::{mpsc, oneshot};
+use tracing::{error, warn};
 
 #[derive(Debug)]
 struct Worker {
@@ -143,7 +144,10 @@ impl Worker {
             Err(_) => {
                 // nothing to do, request will be retried with next heartbeat
                 // todo [later feature] implement dead node logic to prevent unnecessary rpc calls
-                println!("error while sending append entry rpc to {}", self.node.ip)
+                error!(
+                    "error while sending append entry rpc to {},{}",
+                    self.node.ip, self.node.port
+                )
             }
         }
     }
