@@ -118,7 +118,7 @@ impl LogStore {
         }
     }
 
-    //todo [test] test if return values are in correct order
+    //todo [test] test if return values are in correct order (actually already done in int tests)
     #[tracing::instrument(ret, level = "debug")]
     async fn append_entries_and_flush(
         &mut self,
