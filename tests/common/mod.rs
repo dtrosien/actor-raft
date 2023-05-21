@@ -136,17 +136,22 @@ pub async fn prepare_cluster(
     (raft_nodes, handles, shutdown_receivers)
 }
 
+// prepares a node from a (previous) node config.
+// IMPORTANT: since sled db does not support closing and opening dbs rapidly 
+// for integration testing a new db will be created for the "same" node
+// (https://github.com/spacejam/sled/issues/1234)
 pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) -> RaftNode {
     let app = Box::new(IntegrationTestApp {});
+    let mut db_paths = get_test_db_paths(3).await;
     RaftNodeBuilder::new(app)
         .with_id(config.id)
         .with_port(config.port)
         .with_shutdown(s_shutdown)
         .with_client_service_enabled(false)
         .with_nodes(config.nodes)
-        .with_log_db_path(config.log_db_path.as_str())
-        .with_term_db_path(config.term_db_path.as_str())
-        .with_vote_db_path(config.vote_db_path.as_str())
+        .with_log_db_path(db_paths.pop().unwrap().as_str())
+        .with_term_db_path(db_paths.pop().unwrap().as_str())
+        .with_vote_db_path(db_paths.pop().unwrap().as_str())
         .with_initial_state(Follower)
         .build()
         .await
