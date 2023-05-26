@@ -230,7 +230,19 @@ impl RaftNode {
         self.client_server.take()
     }
 
-    async fn run(&mut self) -> &mut RaftNode {
+    /// runs all required services until a external shutdown signal is received
+    pub async fn execute(&mut self) {
+        if let (Some(n_hdl), Some(c_hdl)) = (
+            self.get_node_server_handle(),
+            self.get_client_server_handle(),
+        ) {
+            let runner = self.run_states_continuously();
+            let _ = tokio::join!(n_hdl, c_hdl, runner);
+        }
+    }
+
+    /// runs the current state until a state exit signal is received from watch dog
+    async fn run_state(&mut self) -> &mut RaftNode {
         // reset timer
         self.handles.state_timer.register_heartbeat().await;
         // register at watchdog to get notified when timeouts or term errors occurred
@@ -260,22 +272,25 @@ impl RaftNode {
         self
     }
 
-    pub async fn run_continuously(&mut self) {
+    /// runs states continuously until a external shutdown signal is received
+    pub async fn run_states_continuously(&mut self) {
         let r_shutdown = self.s_shutdown.subscribe();
         while r_shutdown.is_empty() {
-            self.run().await;
+            self.run_state().await;
         }
     }
 
-    pub async fn run_n_times(&mut self, n: u64) -> &RaftNode {
+    /// runs states until n state_exit signal from watchdog are received
+    pub async fn run_states_n_times(&mut self, n: u64) -> &RaftNode {
         for i in 1..=n {
             info!("run n={}", i);
-            self.run().await;
+            self.run_state().await;
         }
         let _ = self.s_shutdown.send(());
         self
     }
 
+    /// stops current node rpc server instance and starts a new one
     pub async fn restart_node_server(&mut self) -> &RaftNode {
         let r_shutdown = self.s_shutdown.subscribe();
         match self.node_server.take() {
@@ -292,6 +307,7 @@ impl RaftNode {
         self
     }
 
+    /// stops current client rpc server instance and starts a new one
     pub async fn restart_client_server(&mut self) -> &RaftNode {
         let r_shutdown = self.s_shutdown.subscribe();
         match self.client_server.take() {
@@ -308,6 +324,7 @@ impl RaftNode {
         self
     }
 
+    /// let the node send heartbeats to all other nodes (this also triggers replication of appended entries)
     async fn send_heartbeats(&self) -> &RaftNode {
         let hb_interval = Duration::from_millis(self.config.heartbeat_interval);
         let r_exit_state = self.watchdog.get_exit_receiver().await;
@@ -337,9 +354,9 @@ mod tests {
         let mut raft_node = RaftNode::build(config, s_shutdown, true, true).await;
         raft_node.restart_node_server().await;
         raft_node.restart_client_server().await;
-        raft_node.run().await.run().await;
+        raft_node.run_state().await.run_state().await;
 
-        let rh = tokio::spawn(async move { raft_node.run_continuously().await });
+        let rh = tokio::spawn(async move { raft_node.execute().await });
         let hb_interval = Duration::from_millis(50);
         tokio::select! {
             _ = rh => {panic!()},

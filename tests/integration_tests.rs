@@ -38,13 +38,13 @@ async fn election_test() {
     // run each node in own task
 
     let t1 = tokio::spawn(async move {
-        raft_node1.run_n_times(1).await;
+        raft_node1.run_states_n_times(1).await;
     });
     let t2 = tokio::spawn(async move {
-        raft_node2.run_n_times(1).await;
+        raft_node2.run_states_n_times(1).await;
     });
     let t3 = tokio::spawn(async move {
-        raft_node3.run_n_times(1).await;
+        raft_node3.run_states_n_times(1).await;
     });
 
     tokio::try_join!(s1, s2, s3, t1, t2, t3).unwrap();
@@ -78,13 +78,13 @@ async fn replication_test() {
     // run each node in own task
 
     let t1 = tokio::spawn(async move {
-        raft_node1.run_continuously().await;
+        raft_node1.run_states_continuously().await;
     });
     let t2 = tokio::spawn(async move {
-        raft_node2.run_continuously().await;
+        raft_node2.run_states_continuously().await;
     });
     let t3 = tokio::spawn(async move {
-        raft_node3.run_continuously().await;
+        raft_node3.run_states_continuously().await;
     });
 
     // thread to shutdown all servers
@@ -161,13 +161,13 @@ async fn failover_test() {
     // begin test
 
     let t1 = tokio::spawn(async move {
-        raft_node1.run_continuously().await;
+        raft_node1.run_states_continuously().await;
     });
     let t2 = tokio::spawn(async move {
-        raft_node2.run_continuously().await;
+        raft_node2.run_states_continuously().await;
     });
     let t3 = tokio::spawn(async move {
-        raft_node3.run_continuously().await;
+        raft_node3.run_states_continuously().await;
     });
 
     // thread to shutdown all servers
@@ -262,7 +262,7 @@ async fn failover_test() {
 
         let _ = tokio::spawn(async move {
             info!("run failover node ");
-            failover_node.run_continuously().await;
+            failover_node.run_states_continuously().await;
         })
         .await;
 
