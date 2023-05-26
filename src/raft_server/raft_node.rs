@@ -158,7 +158,7 @@ pub struct RaftNode {
 }
 
 impl RaftNode {
-    pub async fn build(
+    async fn build(
         config: Config,
         s_shutdown: broadcast::Sender<()>,
         node_server_enabled: bool,
@@ -215,17 +215,21 @@ impl RaftNode {
         }
     }
 
+    /// returns handles to all raft actors
     pub fn get_handles(&self) -> RaftHandles {
         self.handles.clone()
     }
 
+    /// returns the current configuration of the raft node
     pub fn get_config(&self) -> Config {
         self.config.clone()
     }
 
+    /// returns a handle to the task in which the node rpc server is executed
     pub fn get_node_server_handle(&mut self) -> Option<JoinHandle<()>> {
         self.node_server.take()
     }
+    /// returns a handle to the task in which the client rpc server is executed
     pub fn get_client_server_handle(&mut self) -> Option<JoinHandle<()>> {
         self.client_server.take()
     }
@@ -324,7 +328,8 @@ impl RaftNode {
         self
     }
 
-    /// let the node send heartbeats to all other nodes (this also triggers replication of appended entries)
+    /// let the node send heartbeats to all other nodes until a state exit signal is received
+    /// (this also triggers replication of appended entries)
     async fn send_heartbeats(&self) -> &RaftNode {
         let hb_interval = Duration::from_millis(self.config.heartbeat_interval);
         let r_exit_state = self.watchdog.get_exit_receiver().await;
