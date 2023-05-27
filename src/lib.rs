@@ -1,5 +1,6 @@
 extern crate core;
 
+pub mod app;
 pub mod raft_client;
 pub mod raft_server;
 

@@ -1,18 +1,19 @@
 use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server_rpc::append_entries_request::Entry;
 
-use crate::raft_server::raft_node::App;
+use crate::app::{App, AppResult};
 use crate::raft_server::state_meta::StateMeta;
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 #[derive(Debug)]
 struct Executor {
     receiver: mpsc::Receiver<ExecutorMsg>,
+    applied_sender: broadcast::Sender<(u64, AppResult)>,
     commit_index: u64,
     last_applied: u64,
     num_workers: u64,
@@ -24,6 +25,9 @@ struct Executor {
 
 #[derive(Debug)]
 enum ExecutorMsg {
+    GetAppliedReceiver {
+        respond_to: oneshot::Sender<broadcast::Receiver<(u64, AppResult)>>,
+    },
     RegisterWorker {
         worker_id: u64,
     },
@@ -71,8 +75,10 @@ impl Executor {
         current_term: u64,
         app: Box<dyn App>,
     ) -> Self {
+        let (applied_sender, _) = broadcast::channel(8);
         Executor {
             receiver,
+            applied_sender,
             commit_index: 0,
             last_applied: 0,
             num_workers: 0,
@@ -92,6 +98,9 @@ impl Executor {
     #[tracing::instrument(ret, level = "debug")]
     async fn handle_message(&mut self, msg: ExecutorMsg) {
         match msg {
+            ExecutorMsg::GetAppliedReceiver { respond_to } => {
+                let _ = respond_to.send(self.applied_sender.subscribe());
+            }
             ExecutorMsg::CommitLog {
                 entry,
                 leader_commit,
@@ -146,7 +155,10 @@ impl Executor {
         while self.last_applied < self.commit_index {
             let entry_to_be_applied = self.last_applied + 1;
             if let Some(entry) = self.log_store.read_entry(entry_to_be_applied).await {
-                reply = self.app.run(entry)?;
+                let result = self.app.run(entry)?;
+                reply = result.success;
+                let _ = self.applied_sender.send((entry_to_be_applied, result));
+                // todo handle error
             };
             self.last_applied = entry_to_be_applied;
         }
@@ -195,6 +207,15 @@ impl ExecutorHandle {
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn get_applied_receiver(&self) -> broadcast::Receiver<(u64, AppResult)> {
+        let (send, recv) = oneshot::channel();
+        let msg = ExecutorMsg::GetAppliedReceiver { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("watchdog task has been killed")
     }
 
     #[tracing::instrument(ret, level = "debug")]
@@ -335,7 +356,6 @@ mod tests {
     use crate::raft_server::actors::log::test_utils::TestApp;
     use crate::raft_server::db::test_utils::get_test_db_paths;
 
-    // #[tracing_test::traced_test]
     #[tokio::test]
     async fn get_commit_index_test() {
         let mut test_db_paths = get_test_db_paths(1).await;
@@ -396,6 +416,8 @@ mod tests {
         let app = Box::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, 0, app);
 
+        let mut applied_receiver = executor.get_applied_receiver().await;
+
         //test initial state
         assert!(!executor.apply_log().await.unwrap());
 
@@ -412,6 +434,14 @@ mod tests {
         assert!(executor.apply_log().await.unwrap());
         assert_eq!(executor.get_last_applied().await, 2);
         assert_eq!(executor.get_commit_index().await, 2);
+
+        let received_notification = applied_receiver.recv().await.unwrap();
+        assert_eq!(received_notification.0, 1);
+        let received_notification = applied_receiver.recv().await.unwrap();
+        assert_eq!(received_notification.0, 2);
+
+        let payload: String = bincode::deserialize(&received_notification.1.payload).unwrap();
+        assert_eq!(payload, "successful execution"); // must match value set in TestApp
     }
 
     #[tokio::test]

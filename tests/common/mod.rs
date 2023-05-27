@@ -1,7 +1,8 @@
+use actor_raft::app::{App, AppResult};
 use actor_raft::raft_server::config::{Config, NodeConfig};
 use actor_raft::raft_server::raft_handles::RaftHandles;
 use actor_raft::raft_server::raft_node::ServerState::{Candidate, Follower};
-use actor_raft::raft_server::raft_node::{App, RaftNode, RaftNodeBuilder};
+use actor_raft::raft_server::raft_node::{RaftNode, RaftNodeBuilder};
 use actor_raft::raft_server_rpc::append_entries_request::Entry;
 use once_cell::sync::Lazy;
 use std::collections::VecDeque;
@@ -15,9 +16,17 @@ pub struct IntegrationTestApp {}
 
 impl App for IntegrationTestApp {
     #[tracing::instrument(ret, level = "debug")]
-    fn run(&self, entry: Entry) -> Result<bool, Box<dyn Error + Send + Sync>> {
-        println!("hey there");
-        Ok(true)
+    fn run(&self, entry: Entry) -> Result<AppResult, Box<(dyn Error + Send + Sync)>> {
+        let msg = entry.payload.as_str();
+        info!("the following payload was executed in TestApp: {}", msg);
+
+        let result_payload = bincode::serialize("successful execution").unwrap();
+        let result = AppResult {
+            success: true,
+            payload: result_payload,
+        };
+
+        Ok(result)
     }
 }
 

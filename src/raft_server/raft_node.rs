@@ -7,21 +7,17 @@ use crate::raft_server::config::{Config, NodeConfig};
 use crate::raft_server::raft_handles::RaftHandles;
 use crate::raft_server::state_meta::StateMeta;
 use serde::{Deserialize, Serialize};
-use std::error::Error;
 use std::fmt::Debug;
 
 use crate::raft_server::rpc::utils::{init_client_server, init_node_server};
-use crate::raft_server_rpc::append_entries_request::Entry;
 
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::task::JoinHandle;
 use tracing::info;
+use crate::app::App;
 
-pub trait App: Send + Sync + Debug {
-    fn run(&self, entry: Entry) -> Result<bool, Box<dyn Error + Send + Sync>>;
-}
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum ServerState {

@@ -2,8 +2,10 @@ use crate::raft_server::actors::election::initiator::InitiatorHandle;
 use crate::raft_server::actors::log::executor::ExecutorHandle;
 use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server::actors::log::replication::replicator::ReplicatorHandle;
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 
+use crate::app::{App, AppResult};
 use crate::raft_server::actors::election::counter::calculate_required_votes;
 use crate::raft_server::actors::election::counter::CounterHandle;
 use crate::raft_server::actors::state_store::StateStoreHandle;
@@ -11,12 +13,11 @@ use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::actors::timer::TimerHandle;
 use crate::raft_server::actors::watchdog::WatchdogHandle;
 use crate::raft_server::config::Config;
-use crate::raft_server::raft_node::{App, ServerState};
+use crate::raft_server::raft_node::ServerState;
 use crate::raft_server::state_meta::StateMeta;
 use crate::raft_server_rpc::append_entries_request::Entry;
-use rand::Rng;
 use std::time::Duration;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Clone, Debug)]
 pub struct RaftHandles {
@@ -128,6 +129,33 @@ impl RaftHandles {
         }
     }
 
+    pub async fn wait_for_execution_notification(&self, index: u64) -> Option<AppResult> {
+        let mut notifier = self.executor.get_applied_receiver().await;
+        let mut result: Option<AppResult> = None;
+
+        // wait for executor to apply log entry
+        while let Ok(note) = notifier.recv().await {
+            match note.0.cmp(&index) {
+                Ordering::Less => {
+                    // let _ = self.handles.executor.apply_log().await;
+                    info!(
+                        "waiting for result from executor. currently applied: {}, waiting for: {}",
+                        note.0, index
+                    );
+                }
+                Ordering::Equal => {
+                    result = Some(note.1);
+                    break;
+                }
+                Ordering::Greater => {
+                    error!("entry was skipped while waiting for executor");
+                    break;
+                }
+            }
+        }
+        result
+    }
+
     // only in leader state
     pub async fn send_heartbeat(&self) {
         if self.state_store.get_state().await == ServerState::Leader {
@@ -170,7 +198,7 @@ mod tests {
     use crate::raft_server::config::get_test_config;
 
     #[tokio::test]
-    async fn build_test() {
+    async fn build_handles_test() {
         let config = get_test_config().await;
         let state_store = StateStoreHandle::default();
         let wd = WatchdogHandle::new(state_store.clone());

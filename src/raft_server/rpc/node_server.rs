@@ -75,11 +75,8 @@ impl RaftServerRpc for RaftNodeServer {
             .executor
             .commit_log(entries.back().cloned(), rpc_arguments.leader_commit)
             .await;
-        self.handles
-            .executor
-            .apply_log()
-            .await
-            .expect("TODO: panic message");
+
+        let _ = self.handles.executor.apply_log().await;
 
         let reply = AppendEntriesReply {
             term: current_term,

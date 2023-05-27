@@ -2,16 +2,12 @@ use crate::common::{
     enable_tracing, get_test_db_paths, get_test_port, prepare_cluster, prepare_node_from_config,
     IntegrationTestApp,
 };
-use actor_raft::raft_server::config::{Config, NodeConfig};
-use actor_raft::raft_server::raft_handles::RaftHandles;
-use actor_raft::raft_server::raft_node::ServerState::{Candidate, Follower, Leader};
-use actor_raft::raft_server::raft_node::{RaftNode, RaftNodeBuilder};
-use actor_raft::raft_server_rpc::append_entries_request::Entry;
-use std::collections::VecDeque;
+use actor_raft::raft_server::raft_node::ServerState::Leader;
+
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
-use tracing::{info, warn};
+use tracing::info;
 
 mod common;
 
