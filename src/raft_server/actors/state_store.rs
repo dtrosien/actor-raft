@@ -5,6 +5,7 @@ use tokio::sync::{mpsc, oneshot};
 struct StateStore {
     receiver: mpsc::Receiver<StateMsg>,
     state: ServerState,
+    leader_id: Option<u64>, // todo [idea] maybe store somewhere else
 }
 
 #[derive(Debug)]
@@ -15,6 +16,13 @@ enum StateMsg {
     GetState {
         respond_to: oneshot::Sender<ServerState>,
     },
+    GetLeaderId {
+        respond_to: oneshot::Sender<Option<u64>>,
+    },
+    SetLeaderId {
+        respond_to: oneshot::Sender<()>,
+        leader_id: Option<u64>,
+    },
 }
 
 impl StateStore {
@@ -22,6 +30,7 @@ impl StateStore {
         StateStore {
             receiver,
             state: init_state,
+            leader_id: None,
         }
     }
 
@@ -34,12 +43,25 @@ impl StateStore {
     fn handle_message(&mut self, msg: StateMsg) {
         match msg {
             StateMsg::ChangeState { state } => {
+                self.leader_id = None;
                 self.state = state;
             }
             StateMsg::GetState { respond_to } => {
                 respond_to
                     .send(self.state.clone())
                     .expect("Error get state");
+            }
+            StateMsg::GetLeaderId { respond_to } => {
+                respond_to
+                    .send(self.leader_id)
+                    .expect("Error get leader id");
+            }
+            StateMsg::SetLeaderId {
+                respond_to,
+                leader_id,
+            } => {
+                self.leader_id = leader_id;
+                respond_to.send(()).expect("Error set leader id");
             }
         }
     }
@@ -68,6 +90,23 @@ impl StateStoreHandle {
     pub async fn get_state(&self) -> ServerState {
         let (send, recv) = oneshot::channel();
         let msg = StateMsg::GetState { respond_to: send };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("state task has been killed")
+    }
+
+    pub async fn get_leader_id(&self) -> Option<u64> {
+        let (send, recv) = oneshot::channel();
+        let msg = StateMsg::GetLeaderId { respond_to: send };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("state task has been killed")
+    }
+
+    pub async fn set_leader_id(&self, leader_id: Option<u64>) {
+        let (send, recv) = oneshot::channel();
+        let msg = StateMsg::SetLeaderId {
+            respond_to: send,
+            leader_id,
+        };
         let _ = self.sender.send(msg).await;
         recv.await.expect("state task has been killed")
     }

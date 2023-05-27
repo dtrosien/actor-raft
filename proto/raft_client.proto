@@ -22,7 +22,7 @@ message ClientRequestRequest {
 message ClientRequestReply {
   bool status = 1;
   bytes response = 2;
-  uint64 leader_hint = 3;
+  optional uint64 leader_hint = 3;
 }
 
 
@@ -32,7 +32,7 @@ message RegisterClientRequest{
 message RegisterClientReply{
   bool status = 1;
   uint64 client_id = 2;
-  uint64 leader_hint = 3;
+  optional uint64 leader_hint = 3;
 }
 
 
@@ -43,5 +43,5 @@ message ClientQueryRequest{
 message ClientQueryReply{
   bool status = 1;
   bytes response = 2;
-  uint64 leader_hint = 3;
+  optional uint64 leader_hint = 3;
 }

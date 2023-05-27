@@ -78,6 +78,13 @@ impl RaftServerRpc for RaftNodeServer {
 
         let _ = self.handles.executor.apply_log().await;
 
+        // update leader_id
+        self.handles
+            .state_store
+            .set_leader_id(Some(rpc_arguments.leader_id))
+            .await;
+
+        //send reply
         let reply = AppendEntriesReply {
             term: current_term,
             success: true,
@@ -286,7 +293,7 @@ mod tests {
 
         let msg3 = AppendEntriesRequest {
             term: 4,
-            leader_id: 0,
+            leader_id: 3, // changed to check if hint is updated after leader change
             prev_log_index: 5,
             prev_log_term: 2,
             entries: vec![],
@@ -305,6 +312,10 @@ mod tests {
         assert_eq!(raft_server.handles.log_store.get_last_log_index().await, 6);
 
         assert_eq!(raft_server.handles.executor.get_last_applied().await, 6);
+        assert_eq!(
+            raft_server.handles.state_store.get_leader_id().await,
+            Some(3)
+        );
 
         assert_eq!(
             raft_server

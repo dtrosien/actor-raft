@@ -110,25 +110,30 @@ impl RaftHandles {
         })
     }
 
-    // append only in leader state
-    pub async fn append_entry(&self, entry: Entry) {
+    // append only in leader state  // todo [feature] proxy append to leader if in follower state
+    pub async fn append_entry(&self, entry: Entry) -> bool {
         if self.state_store.get_state().await == ServerState::Leader {
             self.log_store.append_entry(entry.clone()).await;
             self.replicator.replicate_entry(entry).await;
+            return true;
         }
+        false
     }
 
     // append only in leader state  // todo [feature] proxy append to leader if in follower state
-    pub async fn append_entries(&self, entries: VecDeque<Entry>) {
+    pub async fn append_entries(&self, entries: VecDeque<Entry>) -> bool {
         if self.state_store.get_state().await == ServerState::Leader {
             self.log_store.append_entries(entries.clone()).await;
             for entry in entries {
                 self.replicator.add_to_batch(entry).await;
             }
             self.replicator.flush_batch().await;
+            return true;
         }
+        false
     }
 
+    // wait and returns the result of the execution of log entry of given index
     pub async fn wait_for_execution_notification(&self, index: u64) -> Option<AppResult> {
         let mut notifier = self.executor.get_applied_receiver().await;
         let mut result: Option<AppResult> = None;
@@ -137,7 +142,6 @@ impl RaftHandles {
         while let Ok(note) = notifier.recv().await {
             match note.0.cmp(&index) {
                 Ordering::Less => {
-                    // let _ = self.handles.executor.apply_log().await;
                     info!(
                         "waiting for result from executor. currently applied: {}, waiting for: {}",
                         note.0, index
@@ -171,7 +175,13 @@ impl RaftHandles {
         }
     }
 
-    // todo [test] unit tests (also in actors)
+    // needed to make the executor aware of new nodes
+    // todo [crucial!!!!!!!!!!!!!!!!] this needs to be in handle init
+    pub async fn register_replication_workers_at_executor(&self) {
+        self.replicator.register_workers_at_executor().await;
+    }
+
+    // todo [test] unit tests (also in actors) (this todo can be removed when int test are all successful)
     pub async fn reset_actor_states(&self) {
         let state_meta = StateMeta::build(
             self.config.id,

@@ -11,13 +11,12 @@ use std::fmt::Debug;
 
 use crate::raft_server::rpc::utils::{init_client_server, init_node_server};
 
+use crate::app::App;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::task::JoinHandle;
 use tracing::info;
-use crate::app::App;
-
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum ServerState {
