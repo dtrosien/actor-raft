@@ -7,7 +7,7 @@ use crate::raft_client_rpc::{
 use crate::raft_server::raft_handles::RaftHandles;
 
 use tonic::{Request, Response, Status};
-use tracing::info;
+use tracing::{info, warn};
 
 // todo [idea] rename service_server
 
@@ -29,10 +29,14 @@ impl RaftClientRpc for RaftClientServer {
         request: Request<ClientRequestRequest>,
     ) -> Result<Response<ClientRequestReply>, Status> {
         let rpc_arguments = request.into_inner();
-
+        info!(
+            "got client request from client: {}",
+            rpc_arguments.client_id
+        );
         // creat entry with index
         match self.handles.create_entry(rpc_arguments.command).await {
             None => {
+                warn!("no entry was created");
                 deny_client_request(1) // todo [crucial] return leader id / address
             }
             Some(entry) => {
@@ -69,7 +73,7 @@ impl RaftClientRpc for RaftClientServer {
 fn deny_client_request(leader_id: u64) -> Result<Response<ClientRequestReply>, Status> {
     let reply = ClientRequestReply {
         status: false,
-        response: "".to_string(),
+        response: vec![],
         leader_hint: leader_id,
     };
     Ok(Response::new(reply))
@@ -79,10 +83,9 @@ fn accept_client_request(
     leader_id: u64,
     result: AppResult,
 ) -> Result<Response<ClientRequestReply>, Status> {
-    let payload: String = bincode::deserialize(&result.payload).unwrap(); // todo remove after switch to binary, see below
     let reply = ClientRequestReply {
         status: result.success,
-        response: payload,
+        response: result.payload,
         leader_hint: leader_id,
     };
     Ok(Response::new(reply))
