@@ -69,24 +69,23 @@ impl RaftClientRpc for RaftClientServer {
         &self,
         request: Request<ClientQueryRequest>,
     ) -> Result<Response<ClientQueryReply>, Status> {
+        let leader_id = self.handles.state_store.get_leader_id().await;
+
         // step 1
         if self.handles.state_store.get_state().await != ServerState::Leader {
-            todo!("reply false")
+            return deny_client_query(leader_id);
         }
 
         // step 2 + 3 todo safe last commit term in executor to prevent reading from db
         let current_term = self.handles.term_store.get_term().await;
         let read_index = self.handles.executor.get_commit_index().await;
-        let committed_term = self
-            .handles
-            .log_store
-            .read_entry(read_index)
-            .await
-            .expect("todo Error Handling")
-            .term;
+        let committed_entry_term = match self.handles.log_store.read_entry(read_index).await {
+            None => self.handles.log_store.get_last_log_term().await,
+            Some(entry) => entry.term,
+        };
 
-        if current_term != committed_term {
-            todo!("return false or wait?")
+        if current_term != committed_entry_term {
+            return deny_client_query(leader_id); // todo or better wait ?
         }
 
         // step 4
@@ -97,16 +96,21 @@ impl RaftClientRpc for RaftClientServer {
             self.handles
                 .wait_for_execution_notification(read_index)
                 .await;
-        }
+        };
 
-        todo!("FIND A WAY TO READ FROM APP WITHOUT BLOCKING THE WHOLE EXECUTOR")
+        // execute query and return result
+        if let Ok(Ok(app_result)) = self.handles.app.query(request.into_inner().query).await {
+            accept_client_query(leader_id, app_result)
+        } else {
+            deny_client_query(leader_id)
+        }
     }
 }
 
 fn deny_client_request(leader_id: Option<u64>) -> Result<Response<ClientRequestReply>, Status> {
     let reply = ClientRequestReply {
         status: false,
-        response: vec![], // todo [idea later] make response optional
+        response: None,
         leader_hint: leader_id,
     };
     Ok(Response::new(reply))
@@ -118,7 +122,28 @@ fn accept_client_request(
 ) -> Result<Response<ClientRequestReply>, Status> {
     let reply = ClientRequestReply {
         status: result.success,
-        response: result.payload,
+        response: Some(result.payload),
+        leader_hint: leader_id,
+    };
+    Ok(Response::new(reply))
+}
+
+fn deny_client_query(leader_id: Option<u64>) -> Result<Response<ClientQueryReply>, Status> {
+    let reply = ClientQueryReply {
+        status: false,
+        response: None,
+        leader_hint: leader_id,
+    };
+    Ok(Response::new(reply))
+}
+
+fn accept_client_query(
+    leader_id: Option<u64>,
+    result: AppResult,
+) -> Result<Response<ClientQueryReply>, Status> {
+    let reply = ClientQueryReply {
+        status: result.success,
+        response: Some(result.payload),
         leader_hint: leader_id,
     };
     Ok(Response::new(reply))
@@ -140,6 +165,7 @@ mod tests {
     use crate::raft_server::raft_node::ServerState;
     use crate::raft_server::rpc::client_server::RaftClientServer;
     use crate::raft_server::state_meta::StateMeta;
+    use std::sync::Arc;
     use std::time::Duration;
 
     #[tokio::test]
@@ -169,7 +195,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Box::new(TestApp {}),
+            Arc::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
@@ -222,7 +248,7 @@ mod tests {
 
         let request_reply = response.unwrap().into_inner();
 
-        let reply_payload: String = bincode::deserialize(&request_reply.response).unwrap();
+        let reply_payload: String = bincode::deserialize(&request_reply.response.unwrap()).unwrap();
 
         assert_eq!(reply_payload, "successful execution"); // this string is set in TestApp
         assert_eq!(request_reply.leader_hint, None) // when leader no hint is given
@@ -255,7 +281,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Box::new(TestApp {}),
+            Arc::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
@@ -286,7 +312,128 @@ mod tests {
         let request_reply = response.unwrap().into_inner();
 
         assert!(!request_reply.status);
-        assert_eq!(request_reply.response.len(), 0);
+        assert_eq!(request_reply.response, None);
+        assert_eq!(request_reply.leader_hint, leader_id) // when leader no hint is given
+    }
+
+    #[tokio::test]
+    async fn client_query_accept_test() {
+        // init test setup
+        let mut db_paths = get_test_db_paths(3).await;
+        let state_store = StateStoreHandle::default();
+        let wd = WatchdogHandle::new(state_store.clone());
+        let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
+        let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
+
+        log_store.reset_log().await;
+        term_store.reset_term().await;
+
+        let state_meta = StateMeta {
+            last_log_index: 0, // only matters for replicator and voter
+            last_log_term: 0,  //only matters for replicator and voter
+            term: 0,
+            id: 0,
+            leader_commit: 0,
+        };
+
+        let mut config = get_test_config().await;
+        // to avoid state change from leader
+        config.state_timeout = 10000;
+        let handles = RaftHandles::build(
+            state_store,
+            wd,
+            config,
+            Arc::new(TestApp {}),
+            term_store,
+            log_store,
+            state_meta,
+        );
+        let client_server = RaftClientServer { handles };
+
+        client_server.handles.initiator.reset_voted_for().await;
+
+        client_server
+            .handles
+            .replicator
+            .register_workers_at_executor()
+            .await;
+
+        client_server
+            .handles
+            .state_store
+            .change_state(ServerState::Leader)
+            .await;
+
+        // start test
+
+        let query = bincode::serialize("TestQuery").unwrap();
+
+        let msg1 = ClientQueryRequest { query };
+        let request1 = Request::new(msg1);
+
+        let response = client_server.client_query(request1).await;
+
+        let request_reply = response.unwrap().into_inner();
+
+        let reply_payload: String = bincode::deserialize(&request_reply.response.unwrap()).unwrap();
+
+        assert_eq!(reply_payload, "successful query: TestQuery"); // this string is set in TestApp
+        assert_eq!(request_reply.leader_hint, None) // when leader no hint is given
+    }
+
+    #[tokio::test]
+    async fn client_query_denied_test() {
+        // init test setup
+        let mut db_paths = get_test_db_paths(3).await;
+        let state_store = StateStoreHandle::default();
+        let wd = WatchdogHandle::new(state_store.clone());
+        let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
+        let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
+
+        log_store.reset_log().await;
+        term_store.reset_term().await;
+
+        let state_meta = StateMeta {
+            last_log_index: 0, // only matters for replicator and voter
+            last_log_term: 0,  //only matters for replicator and voter
+            term: 0,
+            id: 0,
+            leader_commit: 0,
+        };
+
+        let mut config = get_test_config().await;
+        // to avoid state change from leader
+        config.state_timeout = 10000;
+        let handles = RaftHandles::build(
+            state_store,
+            wd,
+            config,
+            Arc::new(TestApp {}),
+            term_store,
+            log_store,
+            state_meta,
+        );
+        let client_server = RaftClientServer { handles };
+
+        client_server.handles.initiator.reset_voted_for().await;
+
+        let leader_id = Some(4);
+
+        client_server
+            .handles
+            .state_store
+            .set_leader_id(leader_id)
+            .await;
+
+        // start test
+
+        let msg1 = ClientQueryRequest { query: vec![] };
+        let request1 = Request::new(msg1);
+        let response = client_server.client_query(request1).await;
+        let request_reply = response.unwrap().into_inner();
+
+        assert!(!request_reply.status);
+        assert_eq!(request_reply.response, None);
         assert_eq!(request_reply.leader_hint, leader_id) // when leader no hint is given
     }
 }

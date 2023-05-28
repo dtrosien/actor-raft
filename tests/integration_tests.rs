@@ -168,7 +168,7 @@ async fn failover_test() {
 
     // thread to shutdown all servers
     let t4 = tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(7000)).await;
+        tokio::time::sleep(Duration::from_millis(7500)).await;
         shutdown_receivers.iter().for_each(|x| {
             let _ = x.send(());
         });

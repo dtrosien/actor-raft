@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
-use tracing::{info, Subscriber};
+use tracing::info;
 
 #[derive(Debug)]
 pub struct IntegrationTestApp {}
@@ -35,22 +35,18 @@ impl App for IntegrationTestApp {
         &self,
         payload: Vec<u8>,
     ) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        let result = AppResult {
-            success: true,
-            payload: SLED_DUMMY.clone().into_bytes(),
-        };
-        let a = Arc::new(result);
-
         tokio::spawn(async move {
+            let input: String = bincode::deserialize(&payload).unwrap();
+            let answer = format!("successful query: {}", input);
+            let output = bincode::serialize(&answer).unwrap();
             let result = AppResult {
                 success: true,
-                payload: SLED_DUMMY.clone().into_bytes(),
+                payload: output,
             };
             Ok(result)
         })
     }
 }
-static SLED_DUMMY: Lazy<String> = Lazy::new(|| String::from("Dummy Val"));
 
 // global var used to offer unique dbs for each store in unit tests to prevent concurrency issues while testing
 static DB_COUNTER: Lazy<Mutex<u16>> = Lazy::new(|| Mutex::new(0));
@@ -122,7 +118,7 @@ pub async fn prepare_cluster(
 
     // prepare raft nodes
     for i in 0..num_nodes {
-        let app = Box::new(IntegrationTestApp {});
+        let app = Arc::new(IntegrationTestApp {});
 
         let mut other_nodes = node_configs.clone();
         other_nodes.remove(i as usize);
@@ -172,7 +168,7 @@ pub async fn prepare_cluster(
 // for integration testing a new db will be created for the "same" node
 // (https://github.com/spacejam/sled/issues/1234)
 pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) -> RaftNode {
-    let app = Box::new(IntegrationTestApp {});
+    let app = Arc::new(IntegrationTestApp {});
     let mut db_paths = get_test_db_paths(3).await;
     let node = RaftNodeBuilder::new(app)
         .with_id(config.id)

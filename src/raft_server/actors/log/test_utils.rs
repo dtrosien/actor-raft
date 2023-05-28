@@ -28,9 +28,12 @@ impl App for TestApp {
         payload: Vec<u8>,
     ) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
         tokio::spawn(async move {
+            let input: String = bincode::deserialize(&payload).unwrap();
+            let answer = format!("successful query: {}", input);
+            let output = bincode::serialize(&answer).unwrap();
             let result = AppResult {
                 success: true,
-                payload: Vec::from("A".as_bytes()),
+                payload: output,
             };
             Ok(result)
         })

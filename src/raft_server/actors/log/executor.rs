@@ -8,6 +8,7 @@ use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 #[derive(Debug)]
@@ -20,7 +21,7 @@ struct Executor {
     current_term: u64,
     match_index: HashMap<u64, u64>,
     log_store: LogStoreHandle,
-    app: Box<dyn App>,
+    app: Arc<dyn App>,
 }
 
 #[derive(Debug)]
@@ -73,7 +74,7 @@ impl Executor {
         receiver: mpsc::Receiver<ExecutorMsg>,
         log_store: LogStoreHandle,
         current_term: u64,
-        app: Box<dyn App>,
+        app: Arc<dyn App>,
     ) -> Self {
         let (applied_sender, _) = broadcast::channel(8);
         Executor {
@@ -203,7 +204,7 @@ pub struct ExecutorHandle {
 
 impl ExecutorHandle {
     #[tracing::instrument(ret, level = "debug")]
-    pub fn new(log_store: LogStoreHandle, current_term: u64, app: Box<dyn App>) -> Self {
+    pub fn new(log_store: LogStoreHandle, current_term: u64, app: Arc<dyn App>) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Executor::new(receiver, log_store, current_term, app);
         tokio::spawn(async move { actor.run().await });
@@ -357,12 +358,13 @@ mod tests {
     use super::*;
     use crate::raft_server::actors::log::test_utils::TestApp;
     use crate::raft_server::db::test_utils::get_test_db_paths;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn get_commit_index_test() {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, 0, app);
 
         assert_eq!(executor.get_commit_index().await, 0);
@@ -372,7 +374,7 @@ mod tests {
     async fn commit_log_test() {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, 0, app);
 
         // index is lower than leader commit -> index wins
@@ -415,7 +417,7 @@ mod tests {
         log_store.append_entry(entry1).await;
         log_store.append_entry(entry2).await;
 
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, 0, app);
 
         let mut applied_receiver = executor.get_applied_receiver().await;
@@ -475,7 +477,7 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         let executor = ExecutorHandle::new(log_store.clone(), 0, app);
 
         // needed for term check in log

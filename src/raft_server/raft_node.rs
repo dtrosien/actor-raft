@@ -8,6 +8,7 @@ use crate::raft_server::raft_handles::RaftHandles;
 use crate::raft_server::state_meta::StateMeta;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use crate::raft_server::rpc::utils::{init_client_server, init_node_server};
 
@@ -28,13 +29,13 @@ pub enum ServerState {
 pub struct RaftNodeBuilder {
     config: Config,
     s_shutdown: Sender<()>,
-    app: Box<dyn App>,
+    app: Arc<dyn App>,
 }
 
 impl RaftNodeBuilder {
-    pub fn new(app: Box<dyn App>) -> Self {
+    pub fn new(app: Arc<dyn App>) -> Self {
         let config = Config::default();
-        let s_shutdown = broadcast::channel(1).0; // todo [check] broadcast (capacity?) or better oneshot etc?
+        let s_shutdown = broadcast::channel(1).0; // todo [check] broadcast (capacity?)
         RaftNodeBuilder {
             config,
             s_shutdown,
@@ -57,7 +58,7 @@ impl RaftNodeBuilder {
         self
     }
 
-    pub fn with_app(&mut self, app: Box<dyn App>) -> &mut RaftNodeBuilder {
+    pub fn with_app(&mut self, app: Arc<dyn App>) -> &mut RaftNodeBuilder {
         self.app = app;
         self
     }
@@ -137,7 +138,7 @@ impl RaftNodeBuilder {
 // todo [feature] implement real console printer for default
 impl Default for RaftNodeBuilder {
     fn default() -> Self {
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         RaftNodeBuilder::new(app)
     }
 }
@@ -170,7 +171,7 @@ impl RaftNode {
             state_store.clone(),
             watchdog.clone(),
             config.clone(),
-            Box::new(TestApp {}),
+            Arc::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
@@ -326,6 +327,7 @@ impl RaftNode {
     /// let the node send heartbeats to all other nodes until a state exit signal is received
     /// (this also triggers replication of appended entries)
     async fn send_heartbeats(&self) -> &RaftNode {
+        // todo [feature] send no opt entry here
         let hb_interval = Duration::from_millis(self.config.heartbeat_interval);
         let r_exit_state = self.watchdog.get_exit_receiver().await;
         let r_shutdown = self.s_shutdown.subscribe();
@@ -367,7 +369,7 @@ mod tests {
 
     #[tokio::test]
     async fn builder_test() {
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         let raft_node = RaftNodeBuilder::new(app)
             .with_id(1)
             .with_initial_state(Leader)

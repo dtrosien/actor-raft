@@ -170,6 +170,7 @@ mod tests {
     use crate::raft_server::db::test_utils::get_test_db_paths;
     use crate::raft_server::state_meta::StateMeta;
     use crate::raft_server_rpc::append_entries_request::Entry;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn append_entry_test() {
@@ -195,7 +196,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Box::new(TestApp {}),
+            Arc::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
@@ -352,7 +353,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Box::new(TestApp {}),
+            Arc::new(TestApp {}),
             term_store,
             log_store,
             state_meta,

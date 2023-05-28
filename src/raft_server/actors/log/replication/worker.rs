@@ -315,6 +315,7 @@ mod tests {
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
     use crate::raft_server::state_meta::StateMeta;
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::broadcast;
 
@@ -538,7 +539,7 @@ mod tests {
         // term must be at least 1 since mock server replies 1
         term_store.increment_term().await;
 
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);

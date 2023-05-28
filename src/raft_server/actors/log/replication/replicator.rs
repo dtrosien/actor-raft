@@ -227,12 +227,13 @@ mod tests {
     use crate::raft_server::rpc::utils::test::{
         start_test_server, TestServerFalse, TestServerTrue,
     };
+    use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::broadcast;
 
     #[tokio::test]
     async fn term_test() {
-        let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
+        let (config, _state_meta, _replicator, log_store, executor, term_store, mut _error_recv) =
             prepare_test_dependencies().await;
         let state_meta = StateMeta {
             last_log_index: 0,
@@ -249,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn replication_test() {
-        let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
+        let (config, _state_meta, replicator, log_store, executor, _term_store, mut error_recv) =
             prepare_test_dependencies().await;
 
         let entry = Entry {
@@ -283,7 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn batch_replication_test() {
-        let (config, state_meta, replicator, log_store, executor, term_store, mut error_recv) =
+        let (config, _state_meta, replicator, log_store, executor, _term_store, mut error_recv) =
             prepare_test_dependencies().await;
 
         for i in 1..=100 {
@@ -336,7 +337,7 @@ mod tests {
         term_store.increment_term().await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
-        let app = Box::new(TestApp {});
+        let app = Arc::new(TestApp {});
         let executor = ExecutorHandle::new(log_store.clone(), 1, app);
 
         let config = get_test_config().await;

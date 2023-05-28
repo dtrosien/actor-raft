@@ -4,6 +4,7 @@ use crate::raft_server::actors::log::log_store::LogStoreHandle;
 use crate::raft_server::actors::log::replication::replicator::ReplicatorHandle;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use crate::app::{App, AppResult};
 use crate::raft_server::actors::election::counter::calculate_required_votes;
@@ -32,6 +33,7 @@ pub struct RaftHandles {
     pub replicator: ReplicatorHandle,
     pub watchdog: WatchdogHandle,
     pub config: Config,
+    pub app: Arc<dyn App>,
 }
 
 impl RaftHandles {
@@ -39,7 +41,7 @@ impl RaftHandles {
         state_store: StateStoreHandle,
         watchdog: WatchdogHandle,
         config: Config,
-        app: Box<dyn App>,
+        app: Arc<dyn App>,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         state_meta: StateMeta,
@@ -62,7 +64,7 @@ impl RaftHandles {
             config.vote_db_path.clone(),
         );
 
-        let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, app);
+        let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, Arc::clone(&app));
         let replicator = ReplicatorHandle::new(
             executor.clone(),
             term_store.clone(),
@@ -82,6 +84,7 @@ impl RaftHandles {
             replicator,
             watchdog,
             config,
+            app,
         }
     }
 
@@ -229,7 +232,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Box::new(TestApp {}),
+            Arc::new(TestApp {}),
             term_store,
             log_store,
             state_meta,
