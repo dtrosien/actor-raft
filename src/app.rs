@@ -4,6 +4,7 @@ use std::fmt::Debug;
 
 pub trait App: Send + Sync + Debug {
     fn run(&self, entry: Entry) -> Result<AppResult, Box<dyn Error + Send + Sync>>;
+    fn query(&self, payload: Vec<u8>) ->  Result<AppResult, Box<dyn Error + Send + Sync>>;
 }
 
 #[derive(Debug, Clone)]

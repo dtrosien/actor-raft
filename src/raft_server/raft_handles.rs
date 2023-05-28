@@ -175,8 +175,7 @@ impl RaftHandles {
         }
     }
 
-    // needed to make the executor aware of new nodes
-    // todo [crucial!!!!!!!!!!!!!!!!] this needs to be in handle init
+    // needed to make the executor aware of new nodes, this is executed when building a raft node
     pub async fn register_replication_workers_at_executor(&self) {
         self.replicator.register_workers_at_executor().await;
     }

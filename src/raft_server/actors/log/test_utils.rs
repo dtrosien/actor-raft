@@ -21,4 +21,8 @@ impl App for TestApp {
 
         Ok(result)
     }
+
+    fn query(&self, payload: Vec<u8>) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
+        todo!()
+    }
 }

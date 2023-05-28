@@ -6,6 +6,7 @@ use crate::raft_client_rpc::{
 };
 use crate::raft_server::raft_handles::RaftHandles;
 
+use crate::raft_server::raft_node::ServerState;
 use tonic::{Request, Response, Status};
 use tracing::{info, warn};
 
@@ -68,7 +69,37 @@ impl RaftClientRpc for RaftClientServer {
         &self,
         request: Request<ClientQueryRequest>,
     ) -> Result<Response<ClientQueryReply>, Status> {
-        todo!("feature")
+        // step 1
+        if self.handles.state_store.get_state().await != ServerState::Leader {
+            todo!("reply false")
+        }
+
+        // step 2 + 3 todo safe last commit term in executor to prevent reading from db
+        let current_term = self.handles.term_store.get_term().await;
+        let read_index = self.handles.executor.get_commit_index().await;
+        let committed_term = self
+            .handles
+            .log_store
+            .read_entry(read_index)
+            .await
+            .expect("todo Error Handling")
+            .term;
+
+        if current_term != committed_term {
+            todo!("return false or wait?")
+        }
+
+        // step 4
+        self.handles.send_heartbeat().await;
+
+        // step 5
+        if self.handles.executor.get_last_applied().await < read_index {
+            self.handles
+                .wait_for_execution_notification(read_index)
+                .await;
+        }
+
+        todo!("FIND A WAY TO READ FROM APP WITHOUT BLOCKING THE WHOLE EXECUTOR")
     }
 }
 

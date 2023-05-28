@@ -198,7 +198,7 @@ impl RaftNode {
         } else {
             None
         };
-
+        handles.register_replication_workers_at_executor().await;
         RaftNode {
             state_store,
             watchdog,

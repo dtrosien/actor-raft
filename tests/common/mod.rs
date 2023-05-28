@@ -28,6 +28,10 @@ impl App for IntegrationTestApp {
 
         Ok(result)
     }
+
+    fn query(&self, payload: Vec<u8>) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
+        todo!()
+    }
 }
 
 // global var used to offer unique dbs for each store in unit tests to prevent concurrency issues while testing
