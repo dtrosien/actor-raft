@@ -7,8 +7,10 @@ use actor_raft::raft_server_rpc::append_entries_request::Entry;
 use once_cell::sync::Lazy;
 use std::collections::VecDeque;
 use std::error::Error;
+use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
+use tokio::task::JoinHandle;
 use tracing::{info, Subscriber};
 
 #[derive(Debug)]
@@ -29,10 +31,26 @@ impl App for IntegrationTestApp {
         Ok(result)
     }
 
-    fn query(&self, payload: Vec<u8>) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
-        todo!()
+    fn query(
+        &self,
+        payload: Vec<u8>,
+    ) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let result = AppResult {
+            success: true,
+            payload: SLED_DUMMY.clone().into_bytes(),
+        };
+        let a = Arc::new(result);
+
+        tokio::spawn(async move {
+            let result = AppResult {
+                success: true,
+                payload: SLED_DUMMY.clone().into_bytes(),
+            };
+            Ok(result)
+        })
     }
 }
+static SLED_DUMMY: Lazy<String> = Lazy::new(|| String::from("Dummy Val"));
 
 // global var used to offer unique dbs for each store in unit tests to prevent concurrency issues while testing
 static DB_COUNTER: Lazy<Mutex<u16>> = Lazy::new(|| Mutex::new(0));
