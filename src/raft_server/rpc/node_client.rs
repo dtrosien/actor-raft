@@ -23,7 +23,7 @@ pub async fn request_vote(
 
     let request = tonic::Request::new(vote_request);
     //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo [feature] define timeout for answer?
-    let mut client = RaftServerRpcClient::new(channel);
+    let mut client = RaftServerRpcClient::new(channel); // todo [performance] keep client in memory and dont build it each time?
 
     let response = client.request_votes(request).await?;
     let response_arguments = response.into_inner();

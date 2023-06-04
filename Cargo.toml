@@ -28,3 +28,8 @@ rand = "0.8.5" # used to generate random election timeouts in a specific range
 
 [build-dependencies]
 tonic-build = "0.8"
+
+[features]
+default = ["client", "server"]
+client = []
+server = []

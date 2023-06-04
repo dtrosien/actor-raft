@@ -1,7 +1,9 @@
 extern crate core;
 
 pub mod app;
+#[cfg(feature = "client")]
 pub mod raft_client;
+#[cfg(feature = "server")]
 pub mod raft_server;
 
 pub mod raft_server_rpc {
