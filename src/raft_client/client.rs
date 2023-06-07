@@ -7,60 +7,166 @@ use crate::raft_client_rpc::{
 use rand::Rng;
 use std::collections::HashMap;
 use std::error::Error;
+use std::future::Future;
 use std::time::Duration;
 use tonic::transport::Channel;
-use tonic::Request;
+use tonic::{IntoRequest, Request};
+use tracing::warn;
 
 struct Client {
     id: Option<u64>,
+    sequence_num: Option<u64>,
     leader_id: Option<u64>,
     config: Config,
     tonic_client: RaftClientRpcClient<Channel>,
 }
 
 impl Client {
-    pub async fn send_query(
-        &self,
-        query: Request<ClientQueryRequest>,
-    ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        todo!()
+    pub async fn query(
+        &mut self,
+        query_payload: Vec<u8>,
+    ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>> {
+        let query = self.build_query(query_payload).await;
+        let mut retries_left = self.config.max_retries;
+        loop {
+            retries_left -= 1;
+            match self.send_query(&query).await {
+                Ok(opt) => return Ok(opt),
+                Err(e) => {
+                    warn!(
+                        "error: , retry send query, retries left: {}",
+                        (retries_left)
+                    );
+                    if retries_left == 0 {
+                        return Err(e);
+                    };
+                    tokio::time::sleep(self.config.delay).await;
+                }
+            };
+        }
     }
 
-    pub async fn send_command(
+    pub async fn command(
         &mut self,
-        command: ClientRequestRequest,
-    ) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+        command_payload: Vec<u8>,
+    ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>> {
+        let command = self.build_command(command_payload).await;
+
+        let mut retries_left = self.config.max_retries;
+        loop {
+            retries_left -= 1;
+            match self.send_command(&command).await {
+                Ok(opt) => return Ok(opt),
+                Err(e) => {
+                    warn!(
+                        "error: , retry send command, retries left: {}",
+                        (retries_left)
+                    );
+                    if retries_left == 0 {
+                        return Err(e);
+                    };
+                    tokio::time::sleep(self.config.delay).await;
+                }
+            };
+        }
+    }
+
+    // todo use this method in command and query if client id is not set
+    async fn register(&mut self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
+        let register_request = self.build_register_request().await;
+        let mut retries_left = self.config.max_retries;
+        loop {
+            retries_left -= 1;
+            match self.send_register_request(&register_request).await {
+                Ok(opt) => return Ok(opt),
+                Err(e) => {
+                    warn!(
+                        "error: , retry send command, retries left: {}",
+                        (retries_left)
+                    );
+                    if retries_left == 0 {
+                        return Err(e);
+                    };
+                    tokio::time::sleep(self.config.delay).await;
+                }
+            };
+        }
+    }
+
+    async fn send_query(
+        &mut self,
+        query: &ClientQueryRequest,
+    ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>> {
+        let request = Request::new(query.clone());
+        let response = self.tonic_client.client_query(request).await?;
+        let response_arguments = response.into_inner();
+
+        if !response_arguments.status && response_arguments.leader_hint.is_none() {
+            return Err("command could not be processed by raft node")?; // todo not neccessarry when reponse is error when false
+        }
+
+        if let Some(leader_hint) = response_arguments.leader_hint {
+            self.update_leader(leader_hint).await;
+            return Err("wrong node, got leader hint")?;
+        }
+
+        Ok(response_arguments.response)
+    }
+
+    async fn send_command(
+        &mut self,
+        command: &ClientRequestRequest,
+    ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>> {
         let request = Request::new(command.clone());
         let response = self.tonic_client.client_request(request).await?;
         let response_arguments = response.into_inner();
 
         if !response_arguments.status && response_arguments.leader_hint.is_none() {
-            panic!("command could not be processed by raft node")
+            return Err("command could not be processed by raft node")?; // todo not neccessarry when reponse is error when false
         }
+
         if let Some(leader_hint) = response_arguments.leader_hint {
             self.update_leader(leader_hint).await;
-            // self.send_command(command).await; // todo cancel retry after x repeats, think about how to handle recusion + build commands private because otherwise sequence num could be wrong etc
+            return Err("wrong node, got leader hint")?;
         }
 
-        todo!()
+        Ok(response_arguments.response)
     }
 
-    async fn register(&self, register_request: RegisterClientRequest) {
-        todo!()
+    async fn send_register_request(
+        &mut self,
+        register_request: &RegisterClientRequest,
+    ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
+        let request = Request::new(register_request.clone());
+        let response = self.tonic_client.register_client(request).await?;
+        let response_arguments = response.into_inner();
+
+        if !response_arguments.status && response_arguments.leader_hint.is_none() {
+            return Err("register_request could not be processed by raft node")?;
+            // todo not neccessarry when reponse is error when false
+        }
+
+        if let Some(leader_hint) = response_arguments.leader_hint {
+            self.update_leader(leader_hint).await;
+            return Err("wrong node, got leader hint")?;
+        }
+
+        Ok(response_arguments.client_id)
     }
 
-    pub async fn build_query(&self, payload: Vec<u8>) -> ClientQueryRequest {
+    // build commands /////////////
+    async fn build_query(&self, payload: Vec<u8>) -> ClientQueryRequest {
         ClientQueryRequest { query: payload }
     }
-    pub async fn build_command(&self, payload: Vec<u8>) -> ClientRequestRequest {
+    async fn build_command(&self, payload: Vec<u8>) -> ClientRequestRequest {
         ClientRequestRequest {
             client_id: 0,                   // todo impl of registration needed
             sequence_num: 0,                // todo impl of registration needed
-            command: "payload".to_string(), // todo switch to vec<u8> payload
+            command: "payload".to_string(), // todo switch to vec<u8> payload !!!!!!!!!!!!!!!!!!!!!!!!!!!!
         }
     }
     async fn build_register_request(&self) -> RegisterClientRequest {
-        todo!()
+        RegisterClientRequest {}
     }
 
     async fn update_leader(&mut self, leader_id: u64) {
@@ -74,15 +180,38 @@ impl Client {
         )
         .await;
     }
+
+    // todo [feature/ refactoring] not working probably because dependent on mut self
+    async fn retry<I, T, F, Fut>(
+        &mut self,
+        max_tries: u8,
+        delay: Duration,
+        request: &I,
+        mut f: F,
+    ) -> Result<Option<T>, Box<dyn Error + Send + Sync>>
+    where
+        F: FnMut(&mut Self, &I) -> Fut,
+        Fut: Future<Output = Result<Option<T>, Box<dyn Error + Send + Sync>>>,
+    {
+        let mut retries_left = max_tries;
+        loop {
+            retries_left -= 1;
+            match f(self, request).await {
+                Ok(opt) => return Ok(opt),
+                Err(e) => {
+                    warn!(
+                        "error: , retry send request, retries left: {}",
+                        (retries_left)
+                    );
+                    if retries_left == 0 {
+                        return Err(e);
+                    };
+                    tokio::time::sleep(delay).await;
+                }
+            };
+        }
+    }
 }
-
-pub trait ClientRequest {}
-
-impl ClientRequest for ClientRequestRequest {}
-
-impl ClientRequest for ClientQueryRequest {}
-
-impl ClientRequest for RegisterClientRequest {}
 
 struct ClientBuilder {
     id: Option<u64>,
@@ -111,6 +240,14 @@ impl ClientBuilder {
         self.config.nodes.insert(node.id, node);
         self
     }
+    pub fn with_delay(&mut self, delay: Duration) -> &mut ClientBuilder {
+        self.config.delay = delay;
+        self
+    }
+    pub fn with_max_retries(&mut self, max_retries: u8) -> &mut ClientBuilder {
+        self.config.max_retries = max_retries;
+        self
+    }
 
     pub async fn build(&self) -> Client {
         let leader = get_random_node(&self.config.nodes).expect("no nodes found in config");
@@ -118,6 +255,7 @@ impl ClientBuilder {
 
         Client {
             id: self.id,
+            sequence_num: None,
             leader_id: Some(leader.id),
             config: self.config.clone(),
             tonic_client,
