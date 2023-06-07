@@ -100,7 +100,7 @@ impl RaftHandles {
     }
 
     // only possible in leader state because entry index must be correct
-    pub async fn create_entry(&self, payload: String) -> Option<Entry> {
+    pub async fn create_entry(&self, payload: Vec<u8>) -> Option<Entry> {
         if self.state_store.get_state().await != ServerState::Leader {
             return None;
         }

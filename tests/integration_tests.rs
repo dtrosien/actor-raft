@@ -97,7 +97,10 @@ async fn replication_test() {
 
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
-        let entry = r_handle1.create_entry("test".to_string()).await.unwrap();
+        let entry = r_handle1
+            .create_entry(bincode::serialize("test").unwrap())
+            .await
+            .unwrap();
         r_handle1.append_entry(entry).await;
         let index = r_handle1.log_store.get_last_log_index().await;
         assert_eq!(index, 1);
@@ -178,7 +181,10 @@ async fn failover_test() {
     // replicate one entry from node 1
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
-        let entry = r_handle1.create_entry("test".to_string()).await.unwrap();
+        let entry = r_handle1
+            .create_entry(bincode::serialize("test").unwrap())
+            .await
+            .unwrap();
         r_handle1.append_entry(entry).await;
         let index = r_handle1.log_store.get_last_log_index().await;
         assert_eq!(index, 1);
@@ -210,13 +216,19 @@ async fn failover_test() {
             .unwrap();
         tokio::time::sleep(Duration::from_millis(2000)).await;
 
-        match r_handle2.create_entry("test1".to_string()).await {
+        match r_handle2
+            .create_entry(bincode::serialize("test1").unwrap())
+            .await
+        {
             None => {}
             Some(entry) => {
                 r_handle2.append_entry(entry).await;
             }
         };
-        match r_handle3.create_entry("test1".to_string()).await {
+        match r_handle3
+            .create_entry(bincode::serialize("test1").unwrap())
+            .await
+        {
             None => {}
             Some(entry) => {
                 r_handle3.append_entry(entry).await;

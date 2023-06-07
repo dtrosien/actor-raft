@@ -376,12 +376,13 @@ mod tests {
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         let app = Arc::new(TestApp {});
         let executor = ExecutorHandle::new(log_store, 0, app);
+        let payload = bincode::serialize("some payload").unwrap();
 
         // index is lower than leader commit -> index wins
         let entry1 = Entry {
             index: 1,
             term: 0,
-            payload: "".to_string(),
+            payload: payload.clone(),
         };
         executor.commit_log(Some(entry1), 2).await;
         assert_eq!(executor.get_commit_index().await, 1);
@@ -390,7 +391,7 @@ mod tests {
         let entry2 = Entry {
             index: 4,
             term: 0,
-            payload: "".to_string(),
+            payload: payload.clone(),
         };
         executor.commit_log(Some(entry2), 2).await;
         assert_eq!(executor.get_commit_index().await, 2);
@@ -404,15 +405,16 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
+        let payload = bincode::serialize("some payload").unwrap();
         let entry1 = Entry {
             index: 1,
             term: 1,
-            payload: "".to_string(),
+            payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
-            payload: "".to_string(),
+            payload: payload.clone(),
         };
         log_store.append_entry(entry1).await;
         log_store.append_entry(entry2).await;
@@ -481,11 +483,12 @@ mod tests {
         let executor = ExecutorHandle::new(log_store.clone(), 0, app);
 
         // needed for term check in log
+        let payload = bincode::serialize("some payload").unwrap();
         for i in 1..=5 {
             let entry = Entry {
                 index: i,
                 term: 0,
-                payload: "".to_string(),
+                payload: payload.clone(),
             };
             log_store.append_entry(entry).await;
         }

@@ -19,7 +19,8 @@ pub struct IntegrationTestApp {}
 impl App for IntegrationTestApp {
     #[tracing::instrument(ret, level = "debug")]
     fn run(&self, entry: Entry) -> Result<AppResult, Box<(dyn Error + Send + Sync)>> {
-        let msg = entry.payload.as_str();
+        let msg: String = bincode::deserialize(&entry.payload).unwrap();
+
         info!("the following payload was executed in TestApp: {}", msg);
 
         let result_payload = bincode::serialize("successful execution").unwrap();

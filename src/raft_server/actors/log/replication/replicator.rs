@@ -252,11 +252,12 @@ mod tests {
     async fn replication_test() {
         let (config, _state_meta, replicator, log_store, executor, _term_store, mut error_recv) =
             prepare_test_dependencies().await;
+        let payload = bincode::serialize("some payload").unwrap();
 
         let entry = Entry {
             index: 1,
             term: 1,
-            payload: "".to_string(),
+            payload: payload.clone(),
         };
 
         log_store.append_entry(entry.clone()).await;
@@ -286,12 +287,13 @@ mod tests {
     async fn batch_replication_test() {
         let (config, _state_meta, replicator, log_store, executor, _term_store, mut error_recv) =
             prepare_test_dependencies().await;
+        let payload = bincode::serialize("some payload").unwrap();
 
         for i in 1..=100 {
             let entry = Entry {
                 index: i,
                 term: 1,
-                payload: "".to_string(),
+                payload: payload.clone(),
             };
             replicator.add_to_batch(entry.clone()).await;
             log_store.append_entry(entry.clone()).await;

@@ -360,20 +360,21 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
+        let payload = bincode::serialize("some payload").unwrap();
         let entry1 = Entry {
             index: 1,
             term: 0,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry3 = Entry {
             index: 3,
             term: 2,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entries = VecDeque::from(vec![entry1.clone(), entry2.clone(), entry3.clone()]);
         let mut indices = log_store.append_entries(entries).await;
@@ -396,7 +397,7 @@ mod tests {
         let entry4 = Entry {
             index: 2,
             term: 4,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let index = log_store.append_entry(entry4.clone()).await;
         assert_eq!(entry4.clone().index, index.unwrap());
@@ -442,11 +443,12 @@ mod tests {
 
         assert!(log_store.last_entry_match(0, 0).await);
         assert!(!log_store.last_entry_match(1, 0).await);
+        let payload = bincode::serialize("some payload").unwrap();
 
         let entry1 = Entry {
             index: 1,
             term: 1,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
 
         log_store.append_entry(entry1).await;
@@ -456,7 +458,7 @@ mod tests {
         let entry2 = Entry {
             index: 2,
             term: 1,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         log_store.append_entry(entry2).await;
 

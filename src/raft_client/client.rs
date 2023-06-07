@@ -160,9 +160,9 @@ impl Client {
     }
     async fn build_command(&self, payload: Vec<u8>) -> ClientRequestRequest {
         ClientRequestRequest {
-            client_id: 0,                   // todo impl of registration needed
-            sequence_num: 0,                // todo impl of registration needed
-            command: "payload".to_string(), // todo switch to vec<u8> payload !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            client_id: 0,    // todo impl of registration needed
+            sequence_num: 0, // todo impl of registration needed
+            command: payload,
         }
     }
     async fn build_register_request(&self) -> RegisterClientRequest {

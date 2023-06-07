@@ -356,7 +356,7 @@ mod tests {
         let entry = Entry {
             index: 1,
             term: 1,
-            payload: "".to_string(),
+            payload: bincode::serialize("some payload").unwrap(),
         };
 
         log_store.append_entry(entry.clone()).await;
@@ -410,12 +410,12 @@ mod tests {
         // start actual test
 
         assert!(worker.get_cached_entries().await.is_empty());
-
+        let payload = bincode::serialize("some payload").unwrap();
         for i in 1..=100 {
             let entry = Entry {
                 index: i,
                 term: 1,
-                payload: "".to_string(),
+                payload: payload.clone(),
             };
             worker.add_to_replication_batch(entry.clone()).await;
             log_store.append_entry(entry.clone()).await;
@@ -468,12 +468,14 @@ mod tests {
         // start actual test
 
         assert!(worker.get_cached_entries().await.is_empty());
+
+        let payload = bincode::serialize("some payload").unwrap();
         // old entries not in cache
         for i in 1..=10 {
             let entry = Entry {
                 index: i,
                 term: 1,
-                payload: "".to_string(),
+                payload: payload.clone(),
             };
             log_store.append_entry(entry.clone()).await;
         }
@@ -483,7 +485,7 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
-                payload: "".to_string(),
+                payload: payload.clone(),
             };
             log_store.append_entry(entry.clone()).await;
             worker.add_to_replication_batch(entry).await;

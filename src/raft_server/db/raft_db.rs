@@ -209,25 +209,27 @@ mod tests {
 
     #[tokio::test]
     async fn entry_test() {
+        let payload = bincode::serialize("some payload").unwrap();
+
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry4 = Entry {
             index: 3,
             term: 1111111,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();
@@ -250,7 +252,7 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: bincode::serialize("some payload").unwrap(),
         };
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();
@@ -264,17 +266,17 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: bincode::serialize("some payload").unwrap(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: bincode::serialize("some payload").unwrap(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: bincode::serialize("some payload").unwrap(),
         };
         let entries = vec![entry1.clone(), entry2.clone(), entry3.clone()];
         let mut db = TEST_DB.lock().await;
@@ -289,20 +291,21 @@ mod tests {
 
     #[tokio::test]
     async fn previous_entry_test() {
+        let payload = bincode::serialize("some payload").unwrap();
         let entry1 = Entry {
             index: 1,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
-            payload: "some payload".to_string(),
+            payload: payload.clone(),
         };
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();

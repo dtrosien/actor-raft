@@ -205,7 +205,7 @@ mod tests {
 
         raft_server.handles.initiator.reset_voted_for().await;
 
-        let payload = "some payload".to_string();
+        let payload = bincode::serialize("some payload").unwrap();
 
         // 1st request
 

@@ -16,7 +16,7 @@ service RaftClientRpc {
 message ClientRequestRequest {
   uint64 client_id = 1;
   uint64 sequence_num = 2;
-  string command = 3;
+  bytes command = 3;
 }
 
 message ClientRequestReply {

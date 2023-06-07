@@ -218,7 +218,7 @@ mod tests {
 
         // start test
 
-        let command = "some payload".to_string();
+        let command = bincode::serialize("some payload").unwrap();
 
         let msg1 = ClientRequestRequest {
             client_id: 0,
@@ -300,7 +300,7 @@ mod tests {
 
         // start test
 
-        let command = "some payload".to_string();
+        let command = bincode::serialize("some payload").unwrap();
 
         let msg1 = ClientRequestRequest {
             client_id: 0,
