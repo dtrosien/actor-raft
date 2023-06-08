@@ -92,6 +92,7 @@ pub mod test {
         *i
     }
 
+    // deprecated
     // wrapper for rpc requests, delays request to give tonic server time to start
     // takes a async function as input
     // function needs to be inserted as a closure
