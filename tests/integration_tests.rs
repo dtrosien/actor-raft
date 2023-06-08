@@ -4,6 +4,7 @@ use crate::common::{
 };
 use actor_raft::raft_server::raft_node::ServerState::Leader;
 
+use actor_raft::raft_server_rpc::EntryType::Command;
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
@@ -98,7 +99,7 @@ async fn replication_test() {
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
         let entry = r_handle1
-            .create_entry(bincode::serialize("test").unwrap())
+            .create_entry(bincode::serialize("test").unwrap(), Command)
             .await
             .unwrap();
         r_handle1.append_entry(entry).await;
@@ -182,7 +183,7 @@ async fn failover_test() {
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
         let entry = r_handle1
-            .create_entry(bincode::serialize("test").unwrap())
+            .create_entry(bincode::serialize("test").unwrap(), Command)
             .await
             .unwrap();
         r_handle1.append_entry(entry).await;
@@ -217,7 +218,7 @@ async fn failover_test() {
         tokio::time::sleep(Duration::from_millis(2000)).await;
 
         match r_handle2
-            .create_entry(bincode::serialize("test1").unwrap())
+            .create_entry(bincode::serialize("test1").unwrap(), Command)
             .await
         {
             None => {}
@@ -226,7 +227,7 @@ async fn failover_test() {
             }
         };
         match r_handle3
-            .create_entry(bincode::serialize("test1").unwrap())
+            .create_entry(bincode::serialize("test1").unwrap(), Command)
             .await
         {
             None => {}

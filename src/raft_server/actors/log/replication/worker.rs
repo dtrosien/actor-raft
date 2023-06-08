@@ -315,6 +315,7 @@ mod tests {
         get_test_port, start_test_server, TestServerFalse, TestServerTrue,
     };
     use crate::raft_server::state_meta::StateMeta;
+    use crate::raft_server_rpc::EntryType;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::broadcast;
@@ -356,6 +357,7 @@ mod tests {
         let entry = Entry {
             index: 1,
             term: 1,
+            entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
         };
 
@@ -415,6 +417,7 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
+                entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
             };
             worker.add_to_replication_batch(entry.clone()).await;
@@ -475,6 +478,7 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
+                entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
             };
             log_store.append_entry(entry.clone()).await;
@@ -485,6 +489,7 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
+                entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
             };
             log_store.append_entry(entry.clone()).await;

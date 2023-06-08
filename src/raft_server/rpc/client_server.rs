@@ -7,6 +7,7 @@ use crate::raft_client_rpc::{
 use crate::raft_server::raft_handles::RaftHandles;
 
 use crate::raft_server::raft_node::ServerState;
+use crate::raft_server_rpc::EntryType;
 use tonic::{Request, Response, Status};
 use tracing::{info, warn};
 
@@ -36,7 +37,11 @@ impl RaftClientRpc for RaftClientServer {
         );
 
         // creat entry with index
-        match self.handles.create_entry(rpc_arguments.command).await {
+        match self
+            .handles
+            .create_entry(rpc_arguments.command, EntryType::Command)
+            .await
+        {
             None => {
                 warn!("no entry was created");
                 let leader_id = self.handles.state_store.get_leader_id().await;
@@ -76,13 +81,16 @@ impl RaftClientRpc for RaftClientServer {
             return deny_client_query(leader_id);
         }
 
-        // step 2 + 3 todo safe last commit term in executor to prevent reading from db
+        // step 2 + 3
         let current_term = self.handles.term_store.get_term().await;
         let read_index = self.handles.executor.get_commit_index().await;
-        let committed_entry_term = match self.handles.log_store.read_entry(read_index).await {
-            None => self.handles.log_store.get_last_log_term().await,
-            Some(entry) => entry.term,
-        };
+
+        // todo [test] safe last commit term in executor to prevent reading from db
+        let committed_entry_term = self.handles.executor.get_commit_term().await;
+        // let committed_entry_term = match self.handles.log_store.read_entry(read_index).await {
+        //     None => self.handles.log_store.get_last_log_term().await,
+        //     Some(entry) => entry.term,
+        // };
 
         if current_term != committed_entry_term {
             return deny_client_query(leader_id); // todo or better wait ?

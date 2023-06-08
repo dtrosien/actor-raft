@@ -181,6 +181,7 @@ impl RaftDb {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::raft_server_rpc::EntryType;
     use once_cell::sync::Lazy;
     use tokio::sync::Mutex;
 
@@ -214,21 +215,25 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry4 = Entry {
             index: 3,
             term: 1111111,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let mut db = TEST_DB.lock().await;
@@ -252,6 +257,7 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
         };
         let mut db = TEST_DB.lock().await;
@@ -266,16 +272,19 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
         };
         let entries = vec![entry1.clone(), entry2.clone(), entry3.clone()];
@@ -295,16 +304,19 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let mut db = TEST_DB.lock().await;

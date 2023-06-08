@@ -227,6 +227,7 @@ mod tests {
     use crate::raft_server::rpc::utils::test::{
         start_test_server, TestServerFalse, TestServerTrue,
     };
+    use crate::raft_server_rpc::EntryType;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::broadcast;
@@ -257,6 +258,7 @@ mod tests {
         let entry = Entry {
             index: 1,
             term: 1,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
 
@@ -293,6 +295,7 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 1,
+                entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
             };
             replicator.add_to_batch(entry.clone()).await;

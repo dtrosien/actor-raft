@@ -354,6 +354,7 @@ impl LogStoreHandle {
 mod tests {
     use super::*;
     use crate::raft_server::db::test_utils::get_test_db_paths;
+    use crate::raft_server_rpc::EntryType;
 
     #[tokio::test]
     async fn append_entry_test() {
@@ -364,16 +365,19 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 0,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry3 = Entry {
             index: 3,
             term: 2,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entries = VecDeque::from(vec![entry1.clone(), entry2.clone(), entry3.clone()]);
@@ -397,6 +401,7 @@ mod tests {
         let entry4 = Entry {
             index: 2,
             term: 4,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let index = log_store.append_entry(entry4.clone()).await;
@@ -448,6 +453,7 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 1,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
 
@@ -458,6 +464,7 @@ mod tests {
         let entry2 = Entry {
             index: 2,
             term: 1,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         log_store.append_entry(entry2).await;

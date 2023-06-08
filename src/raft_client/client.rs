@@ -101,8 +101,9 @@ impl Client {
         let response = self.tonic_client.client_query(request).await?;
         let response_arguments = response.into_inner();
 
+        // todo [feature] not necessary when using Error with status in response
         if !response_arguments.status && response_arguments.leader_hint.is_none() {
-            return Err("command could not be processed by raft node")?; // todo not neccessarry when reponse is error when false
+            return Err("command could not be processed by raft node")?;
         }
 
         if let Some(leader_hint) = response_arguments.leader_hint {
@@ -121,8 +122,9 @@ impl Client {
         let response = self.tonic_client.client_request(request).await?;
         let response_arguments = response.into_inner();
 
+        // todo [feature] not necessary when using Error with status in response
         if !response_arguments.status && response_arguments.leader_hint.is_none() {
-            return Err("command could not be processed by raft node")?; // todo not neccessarry when reponse is error when false
+            return Err("command could not be processed by raft node")?; 
         }
 
         if let Some(leader_hint) = response_arguments.leader_hint {
@@ -140,10 +142,10 @@ impl Client {
         let request = Request::new(register_request.clone());
         let response = self.tonic_client.register_client(request).await?;
         let response_arguments = response.into_inner();
-
+        
+        // todo [feature] not necessary when using Error with status in response
         if !response_arguments.status && response_arguments.leader_hint.is_none() {
             return Err("register_request could not be processed by raft node")?;
-            // todo not neccessarry when reponse is error when false
         }
 
         if let Some(leader_hint) = response_arguments.leader_hint {

@@ -16,6 +16,7 @@ struct Executor {
     receiver: mpsc::Receiver<ExecutorMsg>,
     applied_sender: broadcast::Sender<(u64, AppResult)>,
     commit_index: u64,
+    commit_term: u64, // term of last committed entry, used for queries to prevent db reads
     last_applied: u64,
     num_workers: u64,
     current_term: u64,
@@ -50,6 +51,9 @@ enum ExecutorMsg {
     SetCommitIndex {
         index: u64,
     },
+    GetCommitTerm {
+        respond_to: oneshot::Sender<u64>,
+    },
     GetLastApplied {
         respond_to: oneshot::Sender<u64>,
     },
@@ -81,6 +85,7 @@ impl Executor {
             receiver,
             applied_sender,
             commit_index: 0,
+            commit_term: 0,
             last_applied: 0,
             num_workers: 0,
             current_term,
@@ -121,6 +126,9 @@ impl Executor {
                 let _ = respond_to.send(self.commit_index);
             }
             ExecutorMsg::SetCommitIndex { index } => self.commit_index = index,
+            ExecutorMsg::GetCommitTerm { respond_to } => {
+                let _ = respond_to.send(self.commit_term);
+            }
             ExecutorMsg::GetLastApplied { respond_to } => {
                 let _ = respond_to.send(self.last_applied);
             }
@@ -146,6 +154,10 @@ impl Executor {
         if let Some(entry) = entry {
             if leader_commit > self.commit_index {
                 self.commit_index = min(leader_commit, entry.index);
+            }
+            // term of last committed entry, used for queries to prevent db reads (not in original raft paper)
+            if self.commit_index >= entry.index {
+                self.commit_term = entry.term;
             }
         }
     }
@@ -273,6 +285,15 @@ impl ExecutorHandle {
     }
 
     #[tracing::instrument(ret, level = "debug")]
+    pub async fn get_commit_term(&self) -> u64 {
+        let (send, recv) = oneshot::channel();
+        let msg = ExecutorMsg::GetCommitTerm { respond_to: send };
+
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
     async fn set_last_applied(&self, index: u64) {
         let msg = ExecutorMsg::SetLastApplied { index };
         let _ = self.sender.send(msg).await;
@@ -358,6 +379,7 @@ mod tests {
     use super::*;
     use crate::raft_server::actors::log::test_utils::TestApp;
     use crate::raft_server::db::test_utils::get_test_db_paths;
+    use crate::raft_server_rpc::EntryType;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -382,6 +404,7 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 0,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         executor.commit_log(Some(entry1), 2).await;
@@ -391,6 +414,7 @@ mod tests {
         let entry2 = Entry {
             index: 4,
             term: 0,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         executor.commit_log(Some(entry2), 2).await;
@@ -409,11 +433,13 @@ mod tests {
         let entry1 = Entry {
             index: 1,
             term: 1,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
+            entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
         };
         log_store.append_entry(entry1).await;
@@ -488,6 +514,7 @@ mod tests {
             let entry = Entry {
                 index: i,
                 term: 0,
+                entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
             };
             log_store.append_entry(entry).await;

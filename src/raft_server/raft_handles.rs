@@ -17,6 +17,7 @@ use crate::raft_server::config::Config;
 use crate::raft_server::raft_node::ServerState;
 use crate::raft_server::state_meta::StateMeta;
 use crate::raft_server_rpc::append_entries_request::Entry;
+use crate::raft_server_rpc::EntryType;
 use std::time::Duration;
 use tracing::{error, info};
 
@@ -100,7 +101,7 @@ impl RaftHandles {
     }
 
     // only possible in leader state because entry index must be correct
-    pub async fn create_entry(&self, payload: Vec<u8>) -> Option<Entry> {
+    pub async fn create_entry(&self, payload: Vec<u8>, entry_type: EntryType) -> Option<Entry> {
         if self.state_store.get_state().await != ServerState::Leader {
             return None;
         }
@@ -109,6 +110,7 @@ impl RaftHandles {
         Some(Entry {
             index,
             term,
+            entry_type: i32::from(entry_type),
             payload,
         })
     }
