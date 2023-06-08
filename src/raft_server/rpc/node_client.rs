@@ -11,52 +11,104 @@ pub struct Reply {
     pub success_or_granted: bool,
 }
 
-#[tracing::instrument(ret, level = "debug")]
-pub async fn request_vote(
-    uri: String,
-    vote_request: RequestVoteRequest,
-) -> Result<Reply, Box<dyn Error + Send + Sync>> {
-    let channel = Channel::builder(uri.parse()?)
-        .connect_timeout(Duration::from_millis(2)) // todo  [feature] not needed?
-        .connect()
-        .await?;
-
-    let request = tonic::Request::new(vote_request);
-    //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo [feature] define timeout for answer?
-    let mut client = RaftServerRpcClient::new(channel); // todo [crucial performance] keep client in memory and dont build it each time?
-
-    let response = client.request_votes(request).await?;
-    let response_arguments = response.into_inner();
-    info!("vote granted: {}", response_arguments.vote_granted);
-    Ok(Reply {
-        term: response_arguments.term,
-        success_or_granted: response_arguments.vote_granted,
-    })
+#[derive(Debug, Clone)]
+pub struct NodeClient {
+    client: RaftServerRpcClient<Channel>,
 }
 
-#[tracing::instrument(ret, level = "debug")]
-pub async fn append_entry(
-    uri: String,
-    append_entry_request: AppendEntriesRequest,
-) -> Result<Reply, Box<dyn Error + Send + Sync>> {
-    let channel = Channel::builder(uri.parse()?)
-        .connect_timeout(Duration::from_millis(2)) // todo [feature] not needed?
-        .connect()
-        .await?;
+impl NodeClient {
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn build(ip: String, port: u16) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let uri = format!("https://{ip}:{port}");
 
-    let request = tonic::Request::new(append_entry_request);
-    //let timeout_channel = Timeout::new(channel, Duration::from_secs(10)); //todo [feature] define timeout for answer?
-    let mut client = RaftServerRpcClient::new(channel);
+        let channel = Channel::builder(uri.parse()?)
+            .connect_timeout(Duration::from_millis(100))
+            .connect()
+            .await?;
+        let client = RaftServerRpcClient::new(channel);
+        Ok(NodeClient { client })
+    }
 
-    let response = client.append_entries(request).await?;
-    let response_arguments = response.into_inner();
-    info!("replicated: {}", response_arguments.success);
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn request_vote(
+        &mut self,
+        vote_request: RequestVoteRequest,
+    ) -> Result<Reply, Box<dyn Error + Send + Sync>> {
+        let request = tonic::Request::new(vote_request);
+        let response = self.client.request_votes(request).await?;
+        let response_arguments = response.into_inner();
+        info!("vote granted: {}", response_arguments.vote_granted);
+        Ok(Reply {
+            term: response_arguments.term,
+            success_or_granted: response_arguments.vote_granted,
+        })
+    }
 
-    Ok(Reply {
-        term: response_arguments.term,
-        success_or_granted: response_arguments.success,
-    })
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn append_entry(
+        &mut self,
+        append_entry_request: AppendEntriesRequest,
+    ) -> Result<Reply, Box<dyn Error + Send + Sync>> {
+        let request = tonic::Request::new(append_entry_request);
+        let response = self.client.append_entries(request).await?;
+        let response_arguments = response.into_inner();
+        info!("replicated: {}", response_arguments.success);
+
+        Ok(Reply {
+            term: response_arguments.term,
+            success_or_granted: response_arguments.success,
+        })
+    }
 }
+
+// deprecated
+// #[tracing::instrument(ret, level = "debug")]
+// pub async fn request_vote(
+//     uri: String,
+//     vote_request: RequestVoteRequest,
+// ) -> Result<Reply, Box<dyn Error + Send + Sync>> {
+//     let channel = Channel::builder(uri.parse()?)
+//         .connect_timeout(Duration::from_millis(2))
+//         .connect()
+//         .await?;
+//
+//     let request = tonic::Request::new(vote_request);
+//     //let timeout_channel = Timeout::new(channel, Duration::from_secs(10));
+//     let mut client = RaftServerRpcClient::new(channel);
+//
+//     let response = client.request_votes(request).await?;
+//     let response_arguments = response.into_inner();
+//     info!("vote granted: {}", response_arguments.vote_granted);
+//     Ok(Reply {
+//         term: response_arguments.term,
+//         success_or_granted: response_arguments.vote_granted,
+//     })
+// }
+
+// deprecated
+// #[tracing::instrument(ret, level = "debug")]
+// pub async fn append_entry(
+//     uri: String,
+//     append_entry_request: AppendEntriesRequest,
+// ) -> Result<Reply, Box<dyn Error + Send + Sync>> {
+//     let channel = Channel::builder(uri.parse()?)
+//         .connect_timeout(Duration::from_millis(2))
+//         .connect()
+//         .await?;
+//
+//     let request = tonic::Request::new(append_entry_request);
+//     //let timeout_channel = Timeout::new(channel, Duration::from_secs(10));
+//     let mut client = RaftServerRpcClient::new(channel);
+//
+//     let response = client.append_entries(request).await?;
+//     let response_arguments = response.into_inner();
+//     info!("replicated: {}", response_arguments.success);
+//
+//     Ok(Reply {
+//         term: response_arguments.term,
+//         success_or_granted: response_arguments.success,
+//     })
+// }
 
 #[cfg(test)]
 mod tests {
@@ -78,11 +130,14 @@ mod tests {
         };
         // ports need to be different for each test case since async
         let port = get_test_port().await;
-        let uri = format!("https://[::1]:{port}");
+        let ip = format!("[::1]");
 
         let serve_future = async { start_test_server(port, TestServerTrue {}).await };
-        let request_future =
-            async { start_test_request(|| request_vote(uri.clone(), vote_request.clone())).await };
+        let request_future = async {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            let client = NodeClient::build(ip, port).await.unwrap();
+            client.clone().request_vote(vote_request.clone()).await
+        };
 
         tokio::select! {
                 _ = serve_future => panic!("server returned first"),
@@ -108,11 +163,14 @@ mod tests {
         };
         // ports need to be different for each test case since async
         let port = get_test_port().await;
-        let uri = format!("https://[::1]:{port}");
+        let ip = format!("[::1]");
 
         let serve_future = async { start_test_server(port, TestServerFalse {}).await };
-        let request_future =
-            async { start_test_request(|| request_vote(uri.clone(), vote_request.clone())).await };
+        let request_future = async {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            let client = NodeClient::build(ip, port).await.unwrap();
+            client.clone().request_vote(vote_request.clone()).await
+        };
 
         tokio::select! {
                 _ = serve_future => panic!("server returned first"),
@@ -138,11 +196,13 @@ mod tests {
         };
         // ports need to be different for each test case since async
         let port = get_test_port().await;
-        let uri = "caseMustPanic".to_string();
+        let ip = format!("wrong");
 
         let serve_future = async { start_test_server(port, TestServerFalse {}).await };
-        let request_future =
-            async { start_test_request(|| request_vote(uri.clone(), vote_request.clone())).await };
+        let request_future = async {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            NodeClient::build(ip, port).await
+        };
 
         tokio::select! {
                 _ = serve_future => panic!("server returned first"),
@@ -165,11 +225,16 @@ mod tests {
         };
         // ports need to be different for each test case since async
         let port = get_test_port().await;
-        let uri = format!("https://[::1]:{port}");
+        let ip = format!("[::1]");
 
         let serve_future = async { start_test_server(port, TestServerTrue {}).await };
         let request_future = async {
-            start_test_request(|| append_entry(uri.clone(), append_entries_request.clone())).await
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            let client = NodeClient::build(ip, port).await.unwrap();
+            client
+                .clone()
+                .append_entry(append_entries_request.clone())
+                .await
         };
 
         tokio::select! {
@@ -198,11 +263,16 @@ mod tests {
         };
         // ports need to be different for each test case since async
         let port = get_test_port().await;
-        let uri = format!("https://[::1]:{port}");
+        let ip = format!("[::1]");
 
         let serve_future = async { start_test_server(port, TestServerFalse {}).await };
         let request_future = async {
-            start_test_request(|| append_entry(uri.clone(), append_entries_request.clone())).await
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            let client = NodeClient::build(ip, port).await.unwrap();
+            client
+                .clone()
+                .append_entry(append_entries_request.clone())
+                .await
         };
 
         tokio::select! {
@@ -231,11 +301,12 @@ mod tests {
         };
         // ports need to be different for each test case since async
         let port = get_test_port().await;
-        let uri = "caseMustPanic".to_string();
+        let ip = format!("wrong");
 
         let serve_future = async { start_test_server(port, TestServerFalse {}).await };
         let request_future = async {
-            start_test_request(|| append_entry(uri.clone(), append_entries_request.clone())).await
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            NodeClient::build(ip, port).await
         };
 
         tokio::select! {

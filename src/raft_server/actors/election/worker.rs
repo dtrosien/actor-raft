@@ -3,8 +3,11 @@ use crate::raft_server::actors::term_store::TermStoreHandle;
 use crate::raft_server::config::NodeConfig;
 use crate::raft_server::rpc;
 use crate::raft_server_rpc::RequestVoteRequest;
+use std::error::Error;
 
+use crate::raft_server::rpc::node_client::NodeClient;
 use tokio::sync::{mpsc, oneshot};
+use tracing::{error, info, warn};
 
 #[derive(Debug)]
 struct Worker {
@@ -12,6 +15,7 @@ struct Worker {
     term_store: TermStoreHandle,
     counter: CounterHandle,
     node: NodeConfig,
+    client: Option<NodeClient>,
 }
 
 #[derive(Debug)]
@@ -37,6 +41,7 @@ impl Worker {
             term_store: term,
             counter,
             node,
+            client: None,
         }
     }
 
@@ -60,19 +65,44 @@ impl Worker {
     }
 
     #[tracing::instrument(ret, level = "debug")]
-    async fn request_vote(&self, request: RequestVoteRequest) -> Option<bool> {
-        let ip = self.node.ip.clone();
-        let port = self.node.port;
-        let uri = format!("https://{ip}:{port}");
+    async fn request_vote(&mut self, request: RequestVoteRequest) -> Option<bool> {
+        if self.init_client_if_necessary().await.is_err() {
+            error!("unable to build client for node {} with address: {},{} for election, retry with next request ",
+                    self.node.id, self.node.ip, self.node.port);
+            return Some(false);
+        };
 
-        match rpc::node_client::request_vote(uri, request).await {
+        match self
+            .client
+            .as_mut()
+            .expect("client must exist")
+            .request_vote(request)
+            .await
+        {
             Ok(reply) => {
                 // this call is non blocking and might fire a term error
                 self.term_store.check_term(reply.term).await;
                 Some(reply.success_or_granted)
             }
-            Err(_) => Some(false),
+            Err(_) => {
+                warn!("could not send vote request to node {}", self.node.id);
+                self.client.take();
+                Some(false)
+            }
         }
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    async fn init_client_if_necessary(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        if self.client.is_some() {
+            return Ok(());
+        }
+        info!("init node client for replication");
+        NodeClient::build(self.node.ip.clone(), self.node.port)
+            .await
+            .map(|x| {
+                self.client.replace(x);
+            })
     }
 }
 

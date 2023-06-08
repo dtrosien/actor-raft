@@ -7,7 +7,9 @@ use crate::raft_server_rpc::append_entries_request::Entry;
 use crate::raft_server_rpc::AppendEntriesRequest;
 
 use std::collections::VecDeque;
+use std::error::Error;
 
+use crate::raft_server::rpc::node_client::NodeClient;
 use crate::raft_server::state_meta::StateMeta;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info, warn};
@@ -22,6 +24,7 @@ struct Worker {
     uri: String,
     state_meta: StateMeta,
     entries_cache: VecDeque<Entry>,
+    client: Option<NodeClient>,
 }
 
 #[derive(Debug)]
@@ -70,6 +73,7 @@ impl Worker {
             uri,
             state_meta,
             entries_cache: Default::default(),
+            client: None,
         }
     }
 
@@ -118,6 +122,7 @@ impl Worker {
     // are not needed here. among other things because of the event based triggering by passing
     // entries to the worker and keeping them in the cache. maybe a last index has to be
     // created in case the cache is cleared
+    // todo [refactor] clean up + nicer way of handling broken connections (build client)
     #[tracing::instrument(ret, level = "debug")]
     async fn send_append_request(
         &mut self,
@@ -125,7 +130,19 @@ impl Worker {
         last_entry_index: u64,
         last_entry_term: u64,
     ) {
-        match node_client::append_entry(self.uri.clone(), request).await {
+        if self.init_client_if_necessary().await.is_err() {
+            error!("unable to build client for node {} with address: {},{} for replication, retry with next request ",
+                    self.node.id, self.node.ip, self.node.port);
+            return;
+        };
+
+        match self
+            .client
+            .as_mut()
+            .expect("client must exist")
+            .append_entry(request)
+            .await
+        {
             Ok(response) => {
                 self.term_store.check_term(response.term).await;
                 if response.success_or_granted {
@@ -151,9 +168,23 @@ impl Worker {
                 error!(
                     "error while sending append entry rpc to node {} with address: {},{}",
                     self.node.id, self.node.ip, self.node.port
-                )
+                );
+                self.client.take();
             }
         }
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    async fn init_client_if_necessary(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        if self.client.is_some() {
+            return Ok(());
+        }
+        info!("init node client for replication");
+        NodeClient::build(self.node.ip.clone(), self.node.port)
+            .await
+            .map(|x| {
+                self.client.replace(x);
+            })
     }
 
     #[tracing::instrument(ret, level = "debug")]
