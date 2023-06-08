@@ -15,6 +15,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 struct Executor {
     receiver: mpsc::Receiver<ExecutorMsg>,
     applied_sender: broadcast::Sender<(u64, AppResult)>,
+    // todo sender to client store
     commit_index: u64,
     commit_term: u64, // term of last committed entry, used for queries to prevent db reads
     last_applied: u64,

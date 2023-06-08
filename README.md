@@ -3,8 +3,7 @@
 ## common todos:
 
 
-- client implementation + integration test
-- use bytes also for append entry proto payload
+- client integration test
 
 
 - more integration tests
