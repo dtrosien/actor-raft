@@ -18,8 +18,9 @@ message AppendEntriesRequest {
   message entry {
     uint64 index = 1;
     uint64 term = 2;
-    entry_type entry_type = 3; // used to differentiate the log entries when applying them -> as a result payloads can be completely user specific without boundaries 
+    entry_type entry_type = 3; // used to differentiate the log entries when applying them -> as a result payloads can be completely user specific without boundaries
     bytes payload = 4;
+    //optional uint64 client_id = 5;
   }
   repeated entry entries = 5;
   uint64 leader_commit = 6;

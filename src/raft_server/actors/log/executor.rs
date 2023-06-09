@@ -3,6 +3,8 @@ use crate::raft_server_rpc::append_entries_request::Entry;
 
 use crate::app::{App, AppResult};
 use crate::raft_server::state_meta::StateMeta;
+use crate::raft_server_rpc::EntryType;
+
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
@@ -169,7 +171,16 @@ impl Executor {
         while self.last_applied < self.commit_index {
             let entry_to_be_applied = self.last_applied + 1;
             if let Some(entry) = self.log_store.read_entry(entry_to_be_applied).await {
-                let result = self.app.run(entry)?;
+                let result: AppResult = match EntryType::from_i32(entry.entry_type) {
+                    Some(EntryType::Command) => self.app.run(entry)?,
+                    Some(EntryType::Registration) => self.register_client(entry).await?,
+                    Some(EntryType::MembershipChange) => todo!(),
+                    Some(EntryType::InstallSnapshot) => todo!(),
+                    _ => {
+                        panic!()
+                    }
+                };
+
                 reply = result.success;
                 let _ = self.applied_sender.send((entry_to_be_applied, result));
                 // todo handle error
@@ -177,6 +188,14 @@ impl Executor {
             self.last_applied = entry_to_be_applied;
         }
         Ok(reply)
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
+    async fn register_client(
+        &mut self,
+        entry: Entry,
+    ) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
+        todo!()
     }
 
     #[tracing::instrument(ret, level = "debug")]
