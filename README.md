@@ -4,7 +4,7 @@
 
 
 - client integration test
-
+- implement and test snapshot capabilities with log compactor
 
 - more integration tests
 - more unit tests 

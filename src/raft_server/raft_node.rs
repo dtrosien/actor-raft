@@ -14,7 +14,7 @@ use crate::raft_server::rpc::utils::{init_client_server, init_node_server};
 
 use crate::app::App;
 use std::time::Duration;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, oneshot};
 use tokio::sync::broadcast::Sender;
 use tokio::task::JoinHandle;
 use tracing::info;
@@ -340,6 +340,16 @@ impl RaftNode {
         }
         self
     }
+    
+    
+    async fn get_snapshot_trigger(&self, size: u64) -> broadcast::Receiver<oneshot::Sender<bool>> {
+        todo!("[feature] return receiver which triggers after size #entries were added to the raft log, then the user code needs to snapshot its state and returns  success via oneshot sender")
+        // log_store sends number of recent added entries to log compactor, when size is reached trigger will fire. 
+        // then the user code needs to save its state by himself. if user code answers with true 
+        // over oneshot channel after snapshot is done, the log will be deleted.
+        // (and meta data adjusted if needed)
+    }
+
 }
 
 #[cfg(test)]

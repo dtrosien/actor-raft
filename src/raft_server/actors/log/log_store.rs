@@ -3,11 +3,12 @@ use crate::raft_server_rpc::append_entries_request::Entry;
 use std::collections::VecDeque;
 use std::error::Error;
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 #[derive(Debug)]
 struct LogStore {
     receiver: mpsc::Receiver<LogStoreMsg>,
+    // todo sender to send log size to log_compactor
     last_log_index: u64,
     last_log_term: u64,
     next_log_index: u64,
