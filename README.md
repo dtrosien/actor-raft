@@ -5,6 +5,7 @@
 
 - client integration test
 - implement and test snapshot capabilities with log compactor
+- implement install_snapshot rpc, which send snapshot files over to newly added or erased nodes to 
 
 - more integration tests
 - more unit tests 

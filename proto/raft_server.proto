@@ -28,7 +28,8 @@ message AppendEntriesRequest {
 enum entry_type {
   COMMAND = 0;
   REGISTRATION = 1;
-  ADD_NODE = 2;
+  MEMBERSHIP_CHANGE = 2;
+  INSTALL_SNAPSHOT = 3;
 }
 
 message AppendEntriesReply {
