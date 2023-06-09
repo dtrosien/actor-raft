@@ -14,8 +14,8 @@ use crate::raft_server::rpc::utils::{init_client_server, init_node_server};
 
 use crate::app::App;
 use std::time::Duration;
-use tokio::sync::{broadcast, oneshot};
 use tokio::sync::broadcast::Sender;
+use tokio::sync::{broadcast, oneshot};
 use tokio::task::JoinHandle;
 use tracing::info;
 
@@ -147,7 +147,6 @@ pub struct RaftNode {
     state_store: StateStoreHandle,
     watchdog: WatchdogHandle,
     handles: RaftHandles,
-    config: Config,
     s_shutdown: Sender<()>,
     node_server: Option<JoinHandle<()>>,
     client_server: Option<JoinHandle<()>>,
@@ -204,7 +203,7 @@ impl RaftNode {
             state_store,
             watchdog,
             handles,
-            config,
+            // config,
             s_shutdown,
             node_server,
             client_server,
@@ -218,7 +217,7 @@ impl RaftNode {
 
     /// returns the current configuration of the raft node
     pub fn get_config(&self) -> Config {
-        self.config.clone()
+        self.handles.config.clone()
     }
 
     /// returns a handle to the task in which the node rpc server is executed
@@ -300,8 +299,8 @@ impl RaftNode {
         self.node_server = init_node_server(
             r_shutdown,
             self.handles.clone(),
-            self.config.ip.clone(),
-            self.config.port,
+            self.handles.config.ip.clone(),
+            self.handles.config.port,
         )
         .await;
         self
@@ -317,8 +316,8 @@ impl RaftNode {
         self.client_server = init_client_server(
             r_shutdown,
             self.handles.clone(),
-            self.config.ip.clone(),
-            self.config.service_port,
+            self.handles.config.ip.clone(),
+            self.handles.config.service_port,
         )
         .await;
         self
@@ -328,7 +327,7 @@ impl RaftNode {
     /// (this also triggers replication of appended entries)
     async fn send_heartbeats(&self) -> &RaftNode {
         // todo [feature] send no opt entry here
-        let hb_interval = Duration::from_millis(self.config.heartbeat_interval);
+        let hb_interval = Duration::from_millis(self.handles.config.heartbeat_interval);
         let r_exit_state = self.watchdog.get_exit_receiver().await;
         let r_shutdown = self.s_shutdown.subscribe();
         while r_exit_state.is_empty() && r_shutdown.is_empty() {
@@ -340,16 +339,14 @@ impl RaftNode {
         }
         self
     }
-    
-    
+
     async fn get_snapshot_trigger(&self, size: u64) -> broadcast::Receiver<oneshot::Sender<bool>> {
         todo!("[feature] return receiver which triggers after size #entries were added to the raft log, then the user code needs to snapshot its state and returns  success via oneshot sender")
-        // log_store sends number of recent added entries to log compactor, when size is reached trigger will fire. 
-        // then the user code needs to save its state by himself. if user code answers with true 
+        // log_store sends number of recent added entries to log compactor, when size is reached trigger will fire.
+        // then the user code needs to save its state by himself. if user code answers with true
         // over oneshot channel after snapshot is done, the log will be deleted.
         // (and meta data adjusted if needed)
     }
-
 }
 
 #[cfg(test)]
