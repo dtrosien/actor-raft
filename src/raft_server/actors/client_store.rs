@@ -56,6 +56,7 @@ impl ClientStore {
                 sequence_num,
                 respond_to,
             } => {
+                // todo [refactor] ugly code
                 let app_result =
                     if let Some((Some(num), Some(result))) = self.results.get(&client_id) {
                         if *num == sequence_num {
