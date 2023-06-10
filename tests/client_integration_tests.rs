@@ -2,11 +2,8 @@ use crate::common::{
     enable_tracing, get_test_db_paths, get_test_port, prepare_cluster, prepare_node_from_config,
     IntegrationTestApp,
 };
-use actor_raft::raft_client::client::{Client, ClientBuilder};
-use actor_raft::raft_client::config::NodeConfig as ClientNodeConfig;
-use actor_raft::raft_server_rpc::EntryType::Command;
+use actor_raft::raft_client::client::ClientBuilder;
 use std::time::Duration;
-use tracing::log::error;
 
 mod common;
 
