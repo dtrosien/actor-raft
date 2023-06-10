@@ -1,6 +1,6 @@
 # Actor-Raft
 
-## common todos:
+## todos:
 
 - implement + test client registration (client store)
 - implement and test snapshot capabilities with log compactor
