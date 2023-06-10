@@ -19,6 +19,7 @@ use crate::raft_server::state_meta::StateMeta;
 use crate::raft_server_rpc::append_entries_request::Entry;
 use crate::raft_server_rpc::EntryType;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tracing::{error, info};
 
 #[derive(Clone, Debug)]
@@ -34,7 +35,7 @@ pub struct RaftHandles {
     pub replicator: ReplicatorHandle,
     pub watchdog: WatchdogHandle,
     pub config: Config,
-    pub app: Arc<dyn App>,
+    pub app: Arc<Mutex<dyn App>>,
 }
 
 impl RaftHandles {
@@ -42,7 +43,7 @@ impl RaftHandles {
         state_store: StateStoreHandle,
         watchdog: WatchdogHandle,
         config: Config,
-        app: Arc<dyn App>,
+        app: Arc<Mutex<dyn App>>,
         term_store: TermStoreHandle,
         log_store: LogStoreHandle,
         state_meta: StateMeta,
@@ -234,7 +235,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Arc::new(TestApp {}),
+            Arc::new(Mutex::new(TestApp {})),
             term_store,
             log_store,
             state_meta,

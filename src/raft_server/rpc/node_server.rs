@@ -172,6 +172,7 @@ mod tests {
     use crate::raft_server_rpc::append_entries_request::Entry;
     use crate::raft_server_rpc::EntryType;
     use std::sync::Arc;
+    use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn append_entry_test() {
@@ -197,7 +198,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Arc::new(TestApp {}),
+            Arc::new(Mutex::new(TestApp {})),
             term_store,
             log_store,
             state_meta,
@@ -360,7 +361,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Arc::new(TestApp {}),
+            Arc::new(Mutex::new(TestApp {})),
             term_store,
             log_store,
             state_meta,

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::Debug;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 
 #[derive(Debug)]
 struct Executor {
@@ -25,7 +25,7 @@ struct Executor {
     current_term: u64,
     match_index: HashMap<u64, u64>,
     log_store: LogStoreHandle,
-    app: Arc<dyn App>,
+    app: Arc<Mutex<dyn App>>,
 }
 
 #[derive(Debug)]
@@ -81,7 +81,7 @@ impl Executor {
         receiver: mpsc::Receiver<ExecutorMsg>,
         log_store: LogStoreHandle,
         current_term: u64,
-        app: Arc<dyn App>,
+        app: Arc<Mutex<dyn App>>,
     ) -> Self {
         let (applied_sender, _) = broadcast::channel(8);
         Executor {
@@ -172,10 +172,10 @@ impl Executor {
             let entry_to_be_applied = self.last_applied + 1;
             if let Some(entry) = self.log_store.read_entry(entry_to_be_applied).await {
                 let result: AppResult = match EntryType::from_i32(entry.entry_type) {
-                    Some(EntryType::Command) => self.app.run(entry).await??,
+                    Some(EntryType::Command) => self.app.lock().await.run(entry).await??,
                     Some(EntryType::Registration) => self.register_client(entry).await?,
                     Some(EntryType::MembershipChange) => todo!(),
-                    Some(EntryType::InstallSnapshot) => todo!(),
+                    Some(EntryType::InstallSnapshot) => self.app.lock().await.snapshot().await?, // todo [feature] correct impl of triggering snapshots and sending snapshots (different things !!!)
                     _ => {
                         panic!()
                     }
@@ -237,7 +237,7 @@ pub struct ExecutorHandle {
 
 impl ExecutorHandle {
     #[tracing::instrument(ret, level = "debug")]
-    pub fn new(log_store: LogStoreHandle, current_term: u64, app: Arc<dyn App>) -> Self {
+    pub fn new(log_store: LogStoreHandle, current_term: u64, app: Arc<Mutex<dyn App>>) -> Self {
         let (sender, receiver) = mpsc::channel(8);
         let mut actor = Executor::new(receiver, log_store, current_term, app);
         tokio::spawn(async move { actor.run().await });
@@ -407,7 +407,7 @@ mod tests {
     async fn get_commit_index_test() {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         let executor = ExecutorHandle::new(log_store, 0, app);
 
         assert_eq!(executor.get_commit_index().await, 0);
@@ -417,7 +417,7 @@ mod tests {
     async fn commit_log_test() {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         let executor = ExecutorHandle::new(log_store, 0, app);
         let payload = bincode::serialize("some payload").unwrap();
 
@@ -466,7 +466,7 @@ mod tests {
         log_store.append_entry(entry1).await;
         log_store.append_entry(entry2).await;
 
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         let executor = ExecutorHandle::new(log_store, 0, app);
 
         let mut applied_receiver = executor.get_applied_receiver().await;
@@ -526,7 +526,7 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         let executor = ExecutorHandle::new(log_store.clone(), 0, app);
 
         // needed for term check in log

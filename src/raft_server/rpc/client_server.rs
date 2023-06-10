@@ -106,7 +106,14 @@ impl RaftClientRpc for RaftClientServer {
         };
 
         // execute query and return result
-        if let Ok(Ok(app_result)) = self.handles.app.query(request.into_inner().query).await {
+        if let Ok(Ok(app_result)) = self
+            .handles
+            .app
+            .lock()
+            .await
+            .query(request.into_inner().query)
+            .await
+        {
             accept_client_query(leader_id, app_result)
         } else {
             deny_client_query(leader_id)
@@ -174,6 +181,7 @@ mod tests {
     use crate::raft_server::state_meta::StateMeta;
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn client_request_accept_test() {
@@ -202,7 +210,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Arc::new(TestApp {}),
+            Arc::new(Mutex::new(TestApp {})),
             term_store,
             log_store,
             state_meta,
@@ -288,7 +296,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Arc::new(TestApp {}),
+            Arc::new(Mutex::new(TestApp {})),
             term_store,
             log_store,
             state_meta,
@@ -350,7 +358,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Arc::new(TestApp {}),
+            Arc::new(Mutex::new(TestApp {})),
             term_store,
             log_store,
             state_meta,
@@ -415,7 +423,7 @@ mod tests {
             state_store,
             wd,
             config,
-            Arc::new(TestApp {}),
+            Arc::new(Mutex::new(TestApp {})),
             term_store,
             log_store,
             state_meta,

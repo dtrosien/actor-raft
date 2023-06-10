@@ -15,7 +15,7 @@ use crate::raft_server::rpc::utils::{init_client_server, init_node_server};
 use crate::app::App;
 use std::time::Duration;
 use tokio::sync::broadcast::Sender;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
@@ -29,11 +29,11 @@ pub enum ServerState {
 pub struct RaftNodeBuilder {
     config: Config,
     s_shutdown: Sender<()>,
-    app: Arc<dyn App>,
+    app: Arc<Mutex<dyn App>>,
 }
 
 impl RaftNodeBuilder {
-    pub fn new(app: Arc<dyn App>) -> Self {
+    pub fn new(app: Arc<Mutex<dyn App>>) -> Self {
         let config = Config::default();
         let s_shutdown = broadcast::channel(1).0; // todo [check] broadcast (capacity?)
         RaftNodeBuilder {
@@ -58,7 +58,7 @@ impl RaftNodeBuilder {
         self
     }
 
-    pub fn with_app(&mut self, app: Arc<dyn App>) -> &mut RaftNodeBuilder {
+    pub fn with_app(&mut self, app: Arc<Mutex<dyn App>>) -> &mut RaftNodeBuilder {
         self.app = app;
         self
     }
@@ -135,15 +135,16 @@ impl RaftNodeBuilder {
             self.s_shutdown.clone(),
             self.config.node_server_enabled,
             self.config.client_service_enabled,
+            self.app.clone(),
         )
         .await
     }
 }
 
-// todo [feature] implement real console printer for default
+// todo [feature] implement real console printer or hashmap for default
 impl Default for RaftNodeBuilder {
     fn default() -> Self {
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         RaftNodeBuilder::new(app)
     }
 }
@@ -163,6 +164,7 @@ impl RaftNode {
         s_shutdown: broadcast::Sender<()>,
         node_server_enabled: bool,
         client_service_enabled: bool,
+        app: Arc<Mutex<dyn App>>,
     ) -> Self {
         let state_store = StateStoreHandle::new(config.initial_state.clone());
         let watchdog = WatchdogHandle::new(state_store.clone());
@@ -175,7 +177,7 @@ impl RaftNode {
             state_store.clone(),
             watchdog.clone(),
             config.clone(),
-            Arc::new(TestApp {}),
+            app,
             term_store,
             log_store,
             state_meta,
@@ -374,7 +376,8 @@ mod tests {
         let s_shutdown = broadcast::channel(1).0;
 
         let config = get_test_config().await;
-        let mut raft_node = RaftNode::build(config, s_shutdown, true, true).await;
+        let app = Arc::new(Mutex::new(TestApp {}));
+        let mut raft_node = RaftNode::build(config, s_shutdown, true, true, app).await;
         raft_node.restart_node_server().await;
         raft_node.restart_client_server().await;
         raft_node.run_state().await.run_state().await;
@@ -390,7 +393,7 @@ mod tests {
 
     #[tokio::test]
     async fn builder_test() {
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         let raft_node = RaftNodeBuilder::new(app)
             .with_id(1)
             .with_initial_state(Leader)

@@ -230,7 +230,7 @@ mod tests {
     use crate::raft_server_rpc::EntryType;
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio::sync::broadcast;
+    use tokio::sync::{broadcast, Mutex};
 
     #[tokio::test]
     async fn term_test() {
@@ -342,7 +342,7 @@ mod tests {
         term_store.increment_term().await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         let executor = ExecutorHandle::new(log_store.clone(), 1, app);
 
         let config = get_test_config().await;

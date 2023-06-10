@@ -10,7 +10,7 @@ name = "actor_raft"
 path = "src/lib.rs"
 
 [dependencies]
-tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "fs", "sync", "time", "tracing"] }
+tokio = { version = "1.28.1", features = ["macros", "rt-multi-thread", "fs", "sync", "time", "tracing"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17" # only for applications will be used for integration test and example implementation
 tracing-test = "0.2.4" # put tracing output to console in unit tests

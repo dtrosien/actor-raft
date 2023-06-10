@@ -349,7 +349,7 @@ mod tests {
     use crate::raft_server_rpc::EntryType;
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio::sync::broadcast;
+    use tokio::sync::{broadcast, Mutex};
 
     #[tokio::test]
     async fn get_node_test() {
@@ -577,7 +577,7 @@ mod tests {
         // term must be at least 1 since mock server replies 1
         term_store.increment_term().await;
 
-        let app = Arc::new(TestApp {});
+        let app = Arc::new(Mutex::new(TestApp {}));
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);

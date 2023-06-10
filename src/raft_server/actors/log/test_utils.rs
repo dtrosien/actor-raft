@@ -1,5 +1,6 @@
 use crate::app::{App, AppResult};
 use crate::raft_server_rpc::append_entries_request::Entry;
+use futures_util::future::BoxFuture;
 use std::error::Error;
 use std::fmt::Debug;
 use tokio::task::JoinHandle;
@@ -10,7 +11,7 @@ pub struct TestApp {}
 
 impl App for TestApp {
     #[tracing::instrument(ret, level = "debug")]
-    fn run(&self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+    fn run(&mut self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
         tokio::spawn(async move {
             let msg: String = bincode::deserialize(&entry.payload).unwrap();
             info!("the following payload was executed in TestApp: {}", msg);
@@ -39,5 +40,9 @@ impl App for TestApp {
             };
             Ok(result)
         })
+    }
+
+    fn snapshot(&self) -> BoxFuture<'static, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        todo!()
     }
 }

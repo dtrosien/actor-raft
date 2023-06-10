@@ -5,10 +5,11 @@ use actor_raft::raft_server::raft_handles::RaftHandles;
 use actor_raft::raft_server::raft_node::ServerState::{Candidate, Follower};
 use actor_raft::raft_server::raft_node::{RaftNode, RaftNodeBuilder};
 use actor_raft::raft_server_rpc::append_entries_request::Entry;
+use futures_util::future::BoxFuture;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sled::{Db, Serialize as sled_ser};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
@@ -21,7 +22,7 @@ pub struct IntegrationTestApp {}
 
 impl App for IntegrationTestApp {
     #[tracing::instrument(ret, level = "debug")]
-    fn run(&self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+    fn run(&mut self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
         tokio::spawn(async move {
             let msg: String = bincode::deserialize(&entry.payload).unwrap();
 
@@ -51,6 +52,10 @@ impl App for IntegrationTestApp {
             };
             Ok(result)
         })
+    }
+
+    fn snapshot(&self) -> BoxFuture<'static, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        todo!()
     }
 }
 
@@ -141,7 +146,7 @@ pub async fn prepare_cluster(
 
     // prepare raft nodes
     for i in 0..num_nodes {
-        let app = Arc::new(IntegrationTestApp {});
+        let app = Arc::new(Mutex::new(IntegrationTestApp {}));
 
         let mut other_nodes = node_configs.clone();
         other_nodes.remove(i as usize);
@@ -193,7 +198,7 @@ pub async fn prepare_cluster(
 // for integration testing a new db will be created for the "same" node
 // (https://github.com/spacejam/sled/issues/1234)
 pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) -> RaftNode {
-    let app = Arc::new(IntegrationTestApp {});
+    let app = Arc::new(Mutex::new(IntegrationTestApp {}));
     let mut db_paths = get_test_db_paths(3).await;
     let node = RaftNodeBuilder::new(app)
         .with_id(config.id)
@@ -233,14 +238,15 @@ pub struct SledQuery {
 }
 
 #[derive(Debug)]
-pub struct DistributedSled {}
+pub struct DistributedSled {
+    map: Arc<Mutex<HashMap<u64, String>>>, // todo [test] use when run accepts async without spawning thread
+}
 
 impl App for DistributedSled {
     #[tracing::instrument(ret, level = "debug")]
-    fn run(&self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+    fn run(&mut self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
         tokio::spawn(async move {
             let query: SledInsert = bincode::deserialize(&entry.payload).unwrap();
-
             HA_SLED
                 .lock()
                 .await
@@ -284,5 +290,9 @@ impl App for DistributedSled {
             };
             Ok(result)
         })
+    }
+
+    fn snapshot(&self) -> BoxFuture<'static, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        todo!()
     }
 }
