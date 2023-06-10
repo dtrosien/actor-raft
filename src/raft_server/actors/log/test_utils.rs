@@ -3,17 +3,19 @@ use crate::raft_server_rpc::append_entries_request::Entry;
 use futures_util::future::BoxFuture;
 use std::error::Error;
 use std::fmt::Debug;
-use tokio::task::JoinHandle;
 use tracing::info;
 
 #[derive(Debug)]
 pub struct TestApp {}
 
 impl App for TestApp {
-    #[tracing::instrument(ret, level = "debug")]
-    fn run(&mut self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        tokio::spawn(async move {
+    fn run(
+        &mut self,
+        entry: Entry,
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
             let msg: String = bincode::deserialize(&entry.payload).unwrap();
+
             info!("the following payload was executed in TestApp: {}", msg);
 
             let result_payload = bincode::serialize("successful execution").unwrap();
@@ -23,15 +25,16 @@ impl App for TestApp {
             };
 
             Ok(result)
-        })
+        };
+        Box::pin(future)
     }
 
     fn query(
         &self,
         payload: Vec<u8>,
-    ) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        tokio::spawn(async move {
-            let input: String = bincode::deserialize(&payload).unwrap();
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
+            let input: String = bincode::deserialize(payload.clone().as_slice()).unwrap();
             let answer = format!("successful query: {}", input);
             let output = bincode::serialize(&answer).unwrap();
             let result = AppResult {
@@ -39,10 +42,11 @@ impl App for TestApp {
                 payload: output,
             };
             Ok(result)
-        })
+        };
+        Box::pin(future)
     }
 
-    fn snapshot(&self) -> BoxFuture<'static, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
         todo!()
     }
 }

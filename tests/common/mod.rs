@@ -14,16 +14,17 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
-use tokio::task::JoinHandle;
 use tracing::info;
 
 #[derive(Debug)]
 pub struct IntegrationTestApp {}
 
 impl App for IntegrationTestApp {
-    #[tracing::instrument(ret, level = "debug")]
-    fn run(&mut self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        tokio::spawn(async move {
+    fn run(
+        &mut self,
+        entry: Entry,
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
             let msg: String = bincode::deserialize(&entry.payload).unwrap();
 
             info!("the following payload was executed in TestApp: {}", msg);
@@ -35,14 +36,15 @@ impl App for IntegrationTestApp {
             };
 
             Ok(result)
-        })
+        };
+        Box::pin(future)
     }
 
     fn query(
         &self,
         payload: Vec<u8>,
-    ) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        tokio::spawn(async move {
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
             let input: String = bincode::deserialize(&payload).unwrap();
             let answer = format!("successful query: {}", input);
             let output = bincode::serialize(&answer).unwrap();
@@ -51,10 +53,11 @@ impl App for IntegrationTestApp {
                 payload: output,
             };
             Ok(result)
-        })
+        };
+        Box::pin(future)
     }
 
-    fn snapshot(&self) -> BoxFuture<'static, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
         todo!()
     }
 }
@@ -238,14 +241,14 @@ pub struct SledQuery {
 }
 
 #[derive(Debug)]
-pub struct DistributedSled {
-    map: Arc<Mutex<HashMap<u64, String>>>, // todo [test] use when run accepts async without spawning thread
-}
+pub struct DistributedSled {}
 
 impl App for DistributedSled {
-    #[tracing::instrument(ret, level = "debug")]
-    fn run(&mut self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        tokio::spawn(async move {
+    fn run(
+        &mut self,
+        entry: Entry,
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
             let query: SledInsert = bincode::deserialize(&entry.payload).unwrap();
             HA_SLED
                 .lock()
@@ -266,14 +269,15 @@ impl App for DistributedSled {
                 payload: result_payload,
             };
             Ok(result)
-        })
+        };
+        Box::pin(future)
     }
 
     fn query(
         &self,
         payload: Vec<u8>,
-    ) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        tokio::spawn(async move {
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
             let query: SledQuery = bincode::deserialize(&payload).unwrap();
 
             let result_payload = HA_SLED
@@ -289,10 +293,79 @@ impl App for DistributedSled {
                 payload: result_payload,
             };
             Ok(result)
-        })
+        };
+        Box::pin(future)
     }
 
-    fn snapshot(&self) -> BoxFuture<'static, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        todo!()
+    }
+}
+
+////////////////////////////// Example Hashmap App//////////////////////////////////
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HMInsert {
+    key: u64,
+    value: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HMQuery {
+    key: u64,
+    value: String,
+}
+
+#[derive(Debug)]
+pub struct HAHashMap {
+    map: HashMap<u64, String>,
+}
+
+impl App for HAHashMap {
+    fn run(
+        &mut self,
+        entry: Entry,
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
+            let query: HMInsert = bincode::deserialize(&entry.payload).unwrap();
+
+            self.map
+                .insert(query.key.clone(), query.value.clone())
+                .unwrap();
+
+            let result_payload = bincode::serialize(
+                format!("successful inserted: {}: {}", query.key, query.value).as_str(),
+            )
+            .unwrap();
+
+            let result = AppResult {
+                success: true,
+                payload: result_payload,
+            };
+            Ok(result)
+        };
+        Box::pin(future)
+    }
+
+    fn query(
+        &self,
+        payload: Vec<u8>,
+    ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        let future = async move {
+            let query: HMQuery = bincode::deserialize(&payload).unwrap();
+
+            let result_payload = bincode::serialize(self.map.get(&query.key).unwrap()).unwrap();
+
+            let result = AppResult {
+                success: true,
+                payload: result_payload,
+            };
+            Ok(result)
+        };
+        Box::pin(future)
+    }
+
+    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
         todo!()
     }
 }

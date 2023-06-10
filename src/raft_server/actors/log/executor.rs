@@ -172,7 +172,7 @@ impl Executor {
             let entry_to_be_applied = self.last_applied + 1;
             if let Some(entry) = self.log_store.read_entry(entry_to_be_applied).await {
                 let result: AppResult = match EntryType::from_i32(entry.entry_type) {
-                    Some(EntryType::Command) => self.app.lock().await.run(entry).await??,
+                    Some(EntryType::Command) => self.app.lock().await.run(entry).await?,
                     Some(EntryType::Registration) => self.register_client(entry).await?,
                     Some(EntryType::MembershipChange) => todo!(),
                     Some(EntryType::InstallSnapshot) => self.app.lock().await.snapshot().await?, // todo [feature] correct impl of triggering snapshots and sending snapshots (different things !!!)

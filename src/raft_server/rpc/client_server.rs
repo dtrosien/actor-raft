@@ -106,7 +106,7 @@ impl RaftClientRpc for RaftClientServer {
         };
 
         // execute query and return result
-        if let Ok(Ok(app_result)) = self
+        if let Ok(app_result) = self
             .handles
             .app
             .lock()
