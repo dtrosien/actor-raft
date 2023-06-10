@@ -214,6 +214,8 @@ pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) ->
     node
 }
 
+/////////////////////////////// HA Sled Example APP ///////////////////////////////////////
+
 static HA_SLED: Lazy<Mutex<Db>> = Lazy::new(|| {
     Mutex::new(sled::open("databases/distributed_sled").expect("could not open log-db"))
 });
