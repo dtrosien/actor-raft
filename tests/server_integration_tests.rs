@@ -18,7 +18,7 @@ async fn election_test() {
 
     // prepare nodes
 
-    let (mut nodes, handles, _shutdown_receivers) = prepare_cluster(3, true).await;
+    let (mut nodes, handles, _, _) = prepare_cluster(3, true, false).await;
 
     let mut raft_node3 = nodes.pop().unwrap();
     let mut raft_node2 = nodes.pop().unwrap();
@@ -56,7 +56,7 @@ async fn replication_test() {
 
     // prepare nodes
 
-    let (mut nodes, mut handles, shutdown_receivers) = prepare_cluster(3, true).await;
+    let (mut nodes, mut handles, shutdown_receivers, _) = prepare_cluster(3, true, false).await;
 
     let mut raft_node3 = nodes.pop().unwrap();
     let mut raft_node2 = nodes.pop().unwrap();
@@ -134,7 +134,7 @@ async fn failover_test() {
 
     // prepare nodes
 
-    let (mut nodes, mut handles, shutdown_receivers) = prepare_cluster(3, true).await;
+    let (mut nodes, mut handles, shutdown_receivers, _) = prepare_cluster(3, true, false).await;
 
     let mut raft_node3 = nodes.pop().unwrap();
     let mut raft_node2 = nodes.pop().unwrap();

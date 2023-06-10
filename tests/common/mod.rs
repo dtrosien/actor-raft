@@ -1,4 +1,5 @@
 use actor_raft::app::{App, AppResult};
+use actor_raft::raft_client::config::NodeConfig as ClientNodeConfig;
 use actor_raft::raft_server::config::{Config, NodeConfig};
 use actor_raft::raft_server::raft_handles::RaftHandles;
 use actor_raft::raft_server::raft_node::ServerState::{Candidate, Follower};
@@ -93,9 +94,17 @@ pub async fn enable_tracing() {
 pub async fn prepare_cluster(
     num_nodes: u16,
     predetermined_leader: bool,
-) -> (Vec<RaftNode>, Vec<RaftHandles>, VecDeque<Sender<()>>) {
+    enable_for_clients: bool,
+) -> (
+    Vec<RaftNode>,
+    Vec<RaftHandles>,
+    VecDeque<Sender<()>>,
+    Vec<ClientNodeConfig>,
+) {
     let mut ports: Vec<u16> = Vec::new();
+    let mut service_ports: Vec<u16> = Vec::new();
     let mut node_configs: Vec<NodeConfig> = Vec::new();
+    let mut client_node_configs: Vec<ClientNodeConfig> = Vec::new();
     let mut raft_nodes: Vec<RaftNode> = Vec::new(); // todo switch to map?
     let mut handles: Vec<RaftHandles> = Vec::new();
     let mut db_paths = get_test_db_paths(3 * num_nodes).await;
@@ -104,6 +113,7 @@ pub async fn prepare_cluster(
     for i in 0..num_nodes {
         let s_shutdown = broadcast::channel(1).0;
         let port = get_test_port().await;
+        let service_port = get_test_port().await;
         let node_config = NodeConfig {
             id: i as u64,
             ip: "[::1]".to_string(),
@@ -112,6 +122,14 @@ pub async fn prepare_cluster(
         ports.push(port);
         node_configs.push(node_config);
         shutdown_receivers.push_front(s_shutdown);
+
+        let client_node_config = ClientNodeConfig {
+            id: i as u64,
+            ip: "[::1]".to_string(),
+            port: service_port,
+        };
+        client_node_configs.push(client_node_config);
+        service_ports.push(service_port);
     }
 
     // clone receivers to be able to return them later
@@ -128,8 +146,9 @@ pub async fn prepare_cluster(
             RaftNodeBuilder::new(app)
                 .with_id(i as u64)
                 .with_port(*ports.get(i as usize).unwrap())
+                .with_service_port(*service_ports.get(i as usize).unwrap())
                 .with_shutdown(copy_of_receivers.pop_back().unwrap())
-                .with_client_service_enabled(false)
+                .with_client_service_enabled(enable_for_clients)
                 .with_nodes(other_nodes)
                 .with_log_db_path(db_paths.pop().unwrap().as_str())
                 .with_term_db_path(db_paths.pop().unwrap().as_str())
@@ -141,8 +160,9 @@ pub async fn prepare_cluster(
             RaftNodeBuilder::new(app)
                 .with_id(i as u64)
                 .with_port(*ports.get(i as usize).unwrap())
+                .with_service_port(*service_ports.get(i as usize).unwrap())
                 .with_shutdown(copy_of_receivers.pop_back().unwrap())
-                .with_client_service_enabled(false)
+                .with_client_service_enabled(enable_for_clients)
                 .with_nodes(other_nodes)
                 .with_log_db_path(db_paths.pop().unwrap().as_str())
                 .with_term_db_path(db_paths.pop().unwrap().as_str())
@@ -161,7 +181,7 @@ pub async fn prepare_cluster(
         h.initiator.reset_voted_for().await;
     }
 
-    (raft_nodes, handles, shutdown_receivers)
+    (raft_nodes, handles, shutdown_receivers, client_node_configs)
 }
 
 // prepares a node from a (previous) node config.

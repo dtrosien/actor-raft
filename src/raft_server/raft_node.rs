@@ -81,6 +81,11 @@ impl RaftNodeBuilder {
         self
     }
 
+    pub fn with_service_port(&mut self, port: u16) -> &mut RaftNodeBuilder {
+        self.config.service_port = port;
+        self
+    }
+
     pub fn with_log_db_path(&mut self, path: &str) -> &mut RaftNodeBuilder {
         self.config.log_db_path = path.to_string();
         self

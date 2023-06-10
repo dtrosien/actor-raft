@@ -10,10 +10,10 @@ use std::error::Error;
 use std::future::Future;
 use std::time::Duration;
 use tonic::transport::Channel;
-use tonic::{IntoRequest, Request};
-use tracing::warn;
+use tonic::Request;
+use tracing::{info, warn};
 
-struct Client {
+pub struct Client {
     id: Option<u64>,
     sequence_num: Option<u64>,
     leader_id: Option<u64>,
@@ -71,7 +71,7 @@ impl Client {
         }
     }
 
-    // todo use this method in command and query if client id is not set
+    // todo use this method in command if client id is not set
     async fn register(&mut self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
         let register_request = self.build_register_request().await;
         let mut retries_left = self.config.max_retries;
@@ -103,12 +103,14 @@ impl Client {
 
         // todo [feature] not necessary when using Error with status in response
         if !response_arguments.status && response_arguments.leader_hint.is_none() {
-            return Err("command could not be processed by raft node")?;
+            return Err("query could not be processed by raft node")?;
         }
 
         if let Some(leader_hint) = response_arguments.leader_hint {
             self.update_leader(leader_hint).await;
-            return Err("wrong node, got leader hint")?;
+            let msg = format!("wrong node, got leader hint: {}", leader_hint);
+            warn!(msg);
+            return Err(msg)?;
         }
 
         Ok(response_arguments.response)
@@ -124,12 +126,14 @@ impl Client {
 
         // todo [feature] not necessary when using Error with status in response
         if !response_arguments.status && response_arguments.leader_hint.is_none() {
-            return Err("command could not be processed by raft node")?; 
+            return Err("command could not be processed by raft node")?;
         }
 
         if let Some(leader_hint) = response_arguments.leader_hint {
             self.update_leader(leader_hint).await;
-            return Err("wrong node, got leader hint")?;
+            let msg = format!("wrong node, got leader hint: {}", leader_hint);
+            warn!(msg);
+            return Err(msg)?;
         }
 
         Ok(response_arguments.response)
@@ -142,7 +146,7 @@ impl Client {
         let request = Request::new(register_request.clone());
         let response = self.tonic_client.register_client(request).await?;
         let response_arguments = response.into_inner();
-        
+
         // todo [feature] not necessary when using Error with status in response
         if !response_arguments.status && response_arguments.leader_hint.is_none() {
             return Err("register_request could not be processed by raft node")?;
@@ -172,6 +176,7 @@ impl Client {
     }
 
     async fn update_leader(&mut self, leader_id: u64) {
+        info!("update leader_id to: {}", leader_id);
         self.leader_id = Some(leader_id);
         self.tonic_client = init_tonic_client(
             self.config
@@ -215,9 +220,9 @@ impl Client {
     }
 }
 
-struct ClientBuilder {
+#[derive(Default)]
+pub struct ClientBuilder {
     id: Option<u64>,
-    leader_id: Option<u64>,
     config: Config,
 }
 
@@ -225,7 +230,6 @@ impl ClientBuilder {
     pub fn new() -> Self {
         ClientBuilder {
             id: None,
-            leader_id: None,
             config: Config::default(),
         }
     }

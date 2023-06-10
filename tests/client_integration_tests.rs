@@ -2,8 +2,12 @@ use crate::common::{
     enable_tracing, get_test_db_paths, get_test_port, prepare_cluster, prepare_node_from_config,
     IntegrationTestApp,
 };
+use actor_raft::raft_client::client::{Client, ClientBuilder};
+use actor_raft::raft_client::config::NodeConfig as ClientNodeConfig;
 use actor_raft::raft_server_rpc::EntryType::Command;
 use std::time::Duration;
+use tracing::log::error;
+
 mod common;
 
 #[tokio::test]
@@ -12,7 +16,8 @@ async fn replication_test() {
 
     // prepare nodes
 
-    let (mut nodes, mut handles, shutdown_receivers) = prepare_cluster(3, true).await;
+    let (mut nodes, mut handles, shutdown_receivers, client_node_configs) =
+        prepare_cluster(3, true, true).await;
 
     let mut raft_node3 = nodes.pop().unwrap();
     let mut raft_node2 = nodes.pop().unwrap();
@@ -21,6 +26,13 @@ async fn replication_test() {
     let r_handle3 = handles.pop().unwrap();
     let r_handle2 = handles.pop().unwrap();
     let r_handle1 = handles.pop().unwrap();
+
+    // create client
+
+    let mut client = ClientBuilder::new()
+        .with_nodes(client_node_configs)
+        .build()
+        .await;
 
     // run each node in own task
 
@@ -42,13 +54,21 @@ async fn replication_test() {
 
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
-        let entry = r_handle1
-            .create_entry(bincode::serialize("test").unwrap(), Command)
-            .await
-            .unwrap();
-        r_handle1.append_entry(entry).await;
+
+        let command_result = client.command(bincode::serialize("test").unwrap()).await;
+
+        let answer: String = bincode::deserialize(&command_result.unwrap().unwrap()).unwrap();
+
         let index = r_handle1.log_store.get_last_log_index().await;
         assert_eq!(index, 1);
+        assert_eq!(answer.clone(), "successful execution");
+        //
+        // let query_result = client
+        //     .query(bincode::serialize("test_query").unwrap())
+        //     .await;
+        // let answer: String = bincode::deserialize(&query_result.unwrap().unwrap()).unwrap();
+        // assert_eq!(index, 1);
+        // assert_eq!(answer.clone(), "successful query: test_query");
     });
 
     tokio::try_join!(t1, t2, t3, t4, t5).unwrap();
