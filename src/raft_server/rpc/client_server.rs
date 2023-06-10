@@ -9,7 +9,7 @@ use crate::raft_server::raft_handles::RaftHandles;
 use crate::raft_server::raft_node::ServerState;
 use crate::raft_server_rpc::EntryType;
 use tonic::{Request, Response, Status};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 // todo [idea] rename service_server
 
@@ -85,15 +85,14 @@ impl RaftClientRpc for RaftClientServer {
         let current_term = self.handles.term_store.get_term().await;
         let read_index = self.handles.executor.get_commit_index().await;
 
-        // todo [test] safe last commit term in executor to prevent reading from db
         let committed_entry_term = self.handles.executor.get_commit_term().await;
-        // let committed_entry_term = match self.handles.log_store.read_entry(read_index).await {
-        //     None => self.handles.log_store.get_last_log_term().await,
-        //     Some(entry) => entry.term,
-        // };
 
         if current_term != committed_entry_term {
-            return deny_client_query(leader_id); // todo or better wait ?
+            error!(
+                "client_query: current term != commited entry term: {} | {}",
+                current_term, committed_entry_term
+            );
+            return deny_client_query(leader_id);
         }
 
         // step 4

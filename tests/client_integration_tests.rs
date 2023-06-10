@@ -55,20 +55,20 @@ async fn replication_test() {
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
 
+        // test command
         let command_result = client.command(bincode::serialize("test").unwrap()).await;
-
         let answer: String = bincode::deserialize(&command_result.unwrap().unwrap()).unwrap();
-
         let index = r_handle1.log_store.get_last_log_index().await;
         assert_eq!(index, 1);
-        assert_eq!(answer.clone(), "successful execution");
-        //
-        // let query_result = client
-        //     .query(bincode::serialize("test_query").unwrap())
-        //     .await;
-        // let answer: String = bincode::deserialize(&query_result.unwrap().unwrap()).unwrap();
-        // assert_eq!(index, 1);
-        // assert_eq!(answer.clone(), "successful query: test_query");
+        assert_eq!(answer, "successful execution");
+
+        // test query
+        let query_result = client
+            .query(bincode::serialize("test_query").unwrap())
+            .await;
+        let answer: String = bincode::deserialize(&query_result.unwrap().unwrap()).unwrap();
+        assert_eq!(index, 1);
+        assert_eq!(answer, "successful query: test_query");
     });
 
     tokio::try_join!(t1, t2, t3, t4, t5).unwrap();

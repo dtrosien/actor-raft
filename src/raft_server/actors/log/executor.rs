@@ -219,6 +219,7 @@ impl Executor {
                 if let Some(entry) = self.log_store.read_entry(potential_commit_index).await {
                     if entry.term == self.current_term {
                         self.commit_index = potential_commit_index;
+                        self.commit_term = entry.term;
                         // in leader mode the executer triggers application itself
                         let _ = self.apply_log().await; // todo [performance] read twice from disc in this function, needs improvement
                     }
