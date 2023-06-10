@@ -17,7 +17,7 @@ use std::time::Duration;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, oneshot};
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum ServerState {
@@ -231,12 +231,21 @@ impl RaftNode {
 
     /// runs all required services until a external shutdown signal is received
     pub async fn execute(&mut self) {
-        if let (Some(n_hdl), Some(c_hdl)) = (
+        if let (Some(n_hdl), c_hdl) = (
             self.get_node_server_handle(),
             self.get_client_server_handle(),
         ) {
             let runner = self.run_states_continuously();
-            let _ = tokio::join!(n_hdl, c_hdl, runner);
+            match c_hdl {
+                None => {
+                    let _ = tokio::join!(n_hdl, runner);
+                }
+                Some(c_hdl) => {
+                    let _ = tokio::join!(n_hdl, c_hdl, runner);
+                }
+            }
+        } else {
+            error!("rpc servers did not start correctly")
         }
     }
 
