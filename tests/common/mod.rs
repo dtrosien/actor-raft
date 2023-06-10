@@ -6,6 +6,8 @@ use actor_raft::raft_server::raft_node::ServerState::{Candidate, Follower};
 use actor_raft::raft_server::raft_node::{RaftNode, RaftNodeBuilder};
 use actor_raft::raft_server_rpc::append_entries_request::Entry;
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
+use sled::{Db, Serialize as sled_ser};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::sync::Arc;
@@ -19,18 +21,20 @@ pub struct IntegrationTestApp {}
 
 impl App for IntegrationTestApp {
     #[tracing::instrument(ret, level = "debug")]
-    fn run(&self, entry: Entry) -> Result<AppResult, Box<(dyn Error + Send + Sync)>> {
-        let msg: String = bincode::deserialize(&entry.payload).unwrap();
+    fn run(&self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        tokio::spawn(async move {
+            let msg: String = bincode::deserialize(&entry.payload).unwrap();
 
-        info!("the following payload was executed in TestApp: {}", msg);
+            info!("the following payload was executed in TestApp: {}", msg);
 
-        let result_payload = bincode::serialize("successful execution").unwrap();
-        let result = AppResult {
-            success: true,
-            payload: result_payload,
-        };
+            let result_payload = bincode::serialize("successful execution").unwrap();
+            let result = AppResult {
+                success: true,
+                payload: result_payload,
+            };
 
-        Ok(result)
+            Ok(result)
+        })
     }
 
     fn query(
@@ -208,4 +212,75 @@ pub async fn prepare_node_from_config(config: Config, s_shutdown: Sender<()>) ->
     h.log_store.reset_log().await;
     h.initiator.reset_voted_for().await;
     node
+}
+
+static HA_SLED: Lazy<Mutex<Db>> = Lazy::new(|| {
+    Mutex::new(sled::open("databases/distributed_sled").expect("could not open log-db"))
+});
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SledInsert {
+    key: u64,
+    value: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SledQuery {
+    key: u64,
+    value: String,
+}
+
+#[derive(Debug)]
+pub struct DistributedSled {}
+
+impl App for DistributedSled {
+    #[tracing::instrument(ret, level = "debug")]
+    fn run(&self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        tokio::spawn(async move {
+            let query: SledInsert = bincode::deserialize(&entry.payload).unwrap();
+
+            HA_SLED
+                .lock()
+                .await
+                .insert(
+                    query.key.to_ne_bytes(),
+                    bincode::serialize(&query.value).unwrap(),
+                )
+                .unwrap();
+
+            let result_payload = bincode::serialize(
+                format!("successful inserted: {}: {}", query.key, query.value).as_str(),
+            )
+            .unwrap();
+
+            let result = AppResult {
+                success: true,
+                payload: result_payload,
+            };
+            Ok(result)
+        })
+    }
+
+    fn query(
+        &self,
+        payload: Vec<u8>,
+    ) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        tokio::spawn(async move {
+            let query: SledQuery = bincode::deserialize(&payload).unwrap();
+
+            let result_payload = HA_SLED
+                .lock()
+                .await
+                .get(query.key.to_ne_bytes())
+                .unwrap()
+                .unwrap()
+                .serialize();
+
+            let result = AppResult {
+                success: true,
+                payload: result_payload,
+            };
+            Ok(result)
+        })
+    }
 }

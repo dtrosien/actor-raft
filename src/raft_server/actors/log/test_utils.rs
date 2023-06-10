@@ -10,17 +10,19 @@ pub struct TestApp {}
 
 impl App for TestApp {
     #[tracing::instrument(ret, level = "debug")]
-    fn run(&self, entry: Entry) -> Result<AppResult, Box<(dyn Error + Send + Sync)>> {
-        let msg: String = bincode::deserialize(&entry.payload).unwrap();
-        info!("the following payload was executed in TestApp: {}", msg);
+    fn run(&self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>> {
+        tokio::spawn(async move {
+            let msg: String = bincode::deserialize(&entry.payload).unwrap();
+            info!("the following payload was executed in TestApp: {}", msg);
 
-        let result_payload = bincode::serialize("successful execution").unwrap();
-        let result = AppResult {
-            success: true,
-            payload: result_payload,
-        };
+            let result_payload = bincode::serialize("successful execution").unwrap();
+            let result = AppResult {
+                success: true,
+                payload: result_payload,
+            };
 
-        Ok(result)
+            Ok(result)
+        })
     }
 
     fn query(

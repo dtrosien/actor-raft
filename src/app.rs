@@ -4,8 +4,8 @@ use std::fmt::Debug;
 use tokio::task::JoinHandle;
 
 pub trait App: Send + Sync + Debug {
-    // todo maybe async or return task handle
-    fn run(&self, entry: Entry) -> Result<AppResult, Box<dyn Error + Send + Sync>>;
+    // todo maybe self as mut if possible
+    fn run(&self, entry: Entry) -> JoinHandle<Result<AppResult, Box<dyn Error + Send + Sync>>>;
     fn query(
         &self,
         payload: Vec<u8>,
