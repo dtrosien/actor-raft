@@ -7,7 +7,7 @@ use crate::raft_client_rpc::{
 use crate::raft_server::raft_handles::RaftHandles;
 
 use crate::raft_server::raft_node::ServerState;
-use crate::raft_server_rpc::EntryType;
+use crate::raft_server_rpc::{EntryType, SessionInfo};
 use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};
 
@@ -31,15 +31,24 @@ impl RaftClientRpc for RaftClientServer {
         request: Request<ClientRequestRequest>,
     ) -> Result<Response<ClientRequestReply>, Status> {
         let rpc_arguments = request.into_inner();
+
+        let session = SessionInfo {
+            client_id: rpc_arguments.client_id,
+            sequence_num: rpc_arguments.sequence_num,
+        };
+
         info!(
-            "got client request from client: {}",
-            rpc_arguments.client_id
+            "got client request for session id:{}, seq:{}",
+            session.client_id, session.sequence_num
         );
+
+        // check if request already in client store to prevent enforce only once semantic
+        //todo client store
 
         // creat entry with index
         match self
             .handles
-            .create_entry(rpc_arguments.command, EntryType::Command)
+            .create_entry(rpc_arguments.command, EntryType::Command, Some(session))
             .await
         {
             None => {
@@ -67,7 +76,44 @@ impl RaftClientRpc for RaftClientServer {
         &self,
         request: Request<RegisterClientRequest>,
     ) -> Result<Response<RegisterClientReply>, Status> {
-        todo!("feature")
+        let rpc_arguments = request.into_inner();
+        info!("got client registration request");
+
+        let leader_id = self.handles.state_store.get_leader_id().await;
+
+        // step 1 reply false with leader hint if not leader
+        if self.handles.state_store.get_state().await != ServerState::Leader {
+            return deny_client_registration(leader_id);
+        }
+
+        // step 2 append register command to log, replicate and commit it
+
+        match self
+            .handles
+            .create_entry(vec![], EntryType::Registration, None) // todo session ifo  payload optional if empty vec creates problems
+            .await
+        {
+            None => {
+                warn!("no entry was created");
+                deny_client_registration(leader_id)
+            }
+            Some(entry) => {
+                let index = entry.index;
+
+                // append entry to local log and replicate
+                self.handles.append_entry(entry).await;
+
+                // wait until log was applied and get result
+                // todo [feature/bug?] maybe wrap with timeout
+                match self.handles.wait_for_execution_notification(index).await {
+                    None => deny_client_registration(None),
+                    Some(result) => {
+                        let client_id: u64 = bincode::deserialize(&result.payload).unwrap();
+                        accept_client_registration(None, client_id)
+                    }
+                }
+            }
+        }
     }
 
     async fn client_query(
@@ -158,6 +204,29 @@ fn accept_client_query(
     let reply = ClientQueryReply {
         status: result.success,
         response: Some(result.payload),
+        leader_hint: leader_id,
+    };
+    Ok(Response::new(reply))
+}
+
+fn deny_client_registration(
+    leader_id: Option<u64>,
+) -> Result<Response<RegisterClientReply>, Status> {
+    let reply = RegisterClientReply {
+        status: false,
+        client_id: None,
+        leader_hint: leader_id,
+    };
+    Ok(Response::new(reply))
+}
+
+fn accept_client_registration(
+    leader_id: Option<u64>,
+    client_id: u64,
+) -> Result<Response<RegisterClientReply>, Status> {
+    let reply = RegisterClientReply {
+        status: true,
+        client_id: Some(client_id),
         leader_hint: leader_id,
     };
     Ok(Response::new(reply))

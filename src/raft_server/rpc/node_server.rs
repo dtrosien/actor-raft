@@ -216,30 +216,35 @@ mod tests {
             term: 0,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry3 = Entry {
             index: 3,
             term: 2,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry4 = Entry {
             index: 4,
             term: 2,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry5 = Entry {
             index: 5,
             term: 2,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
 
         let entries = vec![entry1, entry2, entry3, entry4, entry5];
@@ -273,6 +278,7 @@ mod tests {
             term: 2,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
 
         let msg2 = AppendEntriesRequest {

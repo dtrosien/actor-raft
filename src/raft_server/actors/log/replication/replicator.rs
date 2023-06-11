@@ -260,6 +260,7 @@ mod tests {
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
 
         log_store.append_entry(entry.clone()).await;
@@ -297,6 +298,7 @@ mod tests {
                 term: 1,
                 entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
+                session_info: None,
             };
             replicator.add_to_batch(entry.clone()).await;
             log_store.append_entry(entry.clone()).await;

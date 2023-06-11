@@ -20,11 +20,12 @@ message AppendEntriesRequest {
     uint64 term = 2;
     entry_type entry_type = 3; // used to differentiate the log entries when applying them -> as a result payloads can be completely user specific without boundaries
     bytes payload = 4;
-    //optional uint64 client_id = 5;
+    optional SessionInfo session_info = 5; // used to be able to link a already applied client request on a follower, if the leader node gets unavailable and steps down before it replies the successful application to the client -> this prevents multiple unwanted execution of a command
   }
   repeated entry entries = 5;
   uint64 leader_commit = 6;
 }
+
 
 enum entry_type {
   COMMAND = 0;
@@ -33,20 +34,26 @@ enum entry_type {
   INSTALL_SNAPSHOT = 3;
 }
 
+message SessionInfo {
+  uint64 client_id = 1;
+  uint64 sequence_num = 2;
+}
+
+
 message AppendEntriesReply {
   uint64 term = 1;
   bool success = 2;
 }
 
 
-message RequestVoteRequest{
+message RequestVoteRequest {
   uint64 term = 1;
   uint64 candidate_id = 2;
   uint64 last_log_index = 3;
   uint64 last_log_term = 4;
 }
 
-message RequestVoteReply{
+message RequestVoteReply {
   uint64 term = 1;
   bool vote_granted = 2;
 }

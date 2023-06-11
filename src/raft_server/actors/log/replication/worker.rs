@@ -390,6 +390,7 @@ mod tests {
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
+            session_info: None,
         };
 
         log_store.append_entry(entry.clone()).await;
@@ -450,6 +451,7 @@ mod tests {
                 term: 1,
                 entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
+                session_info: None,
             };
             worker.add_to_replication_batch(entry.clone()).await;
             log_store.append_entry(entry.clone()).await;
@@ -511,6 +513,7 @@ mod tests {
                 term: 1,
                 entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
+                session_info: None,
             };
             log_store.append_entry(entry.clone()).await;
         }
@@ -522,6 +525,7 @@ mod tests {
                 term: 1,
                 entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
+                session_info: None,
             };
             log_store.append_entry(entry.clone()).await;
             worker.add_to_replication_batch(entry).await;

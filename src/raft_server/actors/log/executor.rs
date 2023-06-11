@@ -195,7 +195,7 @@ impl Executor {
         &mut self,
         entry: Entry,
     ) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
-        todo!()
+        todo!(!!!!!!!!!!!!!!!!!!!!!!!!!!!!!)
     }
 
     #[tracing::instrument(ret, level = "debug")]
@@ -427,6 +427,7 @@ mod tests {
             term: 0,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         executor.commit_log(Some(entry1), 2).await;
         assert_eq!(executor.get_commit_index().await, 1);
@@ -437,6 +438,7 @@ mod tests {
             term: 0,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         executor.commit_log(Some(entry2), 2).await;
         assert_eq!(executor.get_commit_index().await, 2);
@@ -456,12 +458,14 @@ mod tests {
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         log_store.append_entry(entry1).await;
         log_store.append_entry(entry2).await;
@@ -537,6 +541,7 @@ mod tests {
                 term: 0,
                 entry_type: i32::from(EntryType::Command),
                 payload: payload.clone(),
+                session_info: None,
             };
             log_store.append_entry(entry).await;
         }

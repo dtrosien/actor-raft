@@ -217,24 +217,28 @@ mod tests {
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry4 = Entry {
             index: 3,
             term: 1111111,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();
@@ -259,6 +263,7 @@ mod tests {
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
+            session_info: None,
         };
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();
@@ -274,18 +279,21 @@ mod tests {
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
+            session_info: None,
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
+            session_info: None,
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: bincode::serialize("some payload").unwrap(),
+            session_info: None,
         };
         let entries = vec![entry1.clone(), entry2.clone(), entry3.clone()];
         let mut db = TEST_DB.lock().await;
@@ -306,18 +314,21 @@ mod tests {
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry2 = Entry {
             index: 2,
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry3 = Entry {
             index: 3,
             term: 21313131,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let mut db = TEST_DB.lock().await;
         db.clear_db().await.unwrap();

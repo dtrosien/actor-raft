@@ -99,7 +99,7 @@ async fn replication_test() {
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
         let entry = r_handle1
-            .create_entry(bincode::serialize("test").unwrap(), Command)
+            .create_entry(bincode::serialize("test").unwrap(), Command, None)
             .await
             .unwrap();
         r_handle1.append_entry(entry).await;
@@ -183,7 +183,7 @@ async fn failover_test() {
     let t5 = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(400)).await;
         let entry = r_handle1
-            .create_entry(bincode::serialize("test").unwrap(), Command)
+            .create_entry(bincode::serialize("test").unwrap(), Command, None)
             .await
             .unwrap();
         r_handle1.append_entry(entry).await;
@@ -218,7 +218,7 @@ async fn failover_test() {
         tokio::time::sleep(Duration::from_millis(2000)).await;
 
         match r_handle2
-            .create_entry(bincode::serialize("test1").unwrap(), Command)
+            .create_entry(bincode::serialize("test1").unwrap(), Command, None)
             .await
         {
             None => {}
@@ -227,7 +227,7 @@ async fn failover_test() {
             }
         };
         match r_handle3
-            .create_entry(bincode::serialize("test1").unwrap(), Command)
+            .create_entry(bincode::serialize("test1").unwrap(), Command, None)
             .await
         {
             None => {}

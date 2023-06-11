@@ -368,18 +368,21 @@ mod tests {
             term: 0,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry2 = Entry {
             index: 2,
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entry3 = Entry {
             index: 3,
             term: 2,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let entries = VecDeque::from(vec![entry1.clone(), entry2.clone(), entry3.clone()]);
         let mut indices = log_store.append_entries(entries).await;
@@ -404,6 +407,7 @@ mod tests {
             term: 4,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         let index = log_store.append_entry(entry4.clone()).await;
         assert_eq!(entry4.clone().index, index.unwrap());
@@ -456,6 +460,7 @@ mod tests {
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
 
         log_store.append_entry(entry1).await;
@@ -467,6 +472,7 @@ mod tests {
             term: 1,
             entry_type: i32::from(EntryType::Command),
             payload: payload.clone(),
+            session_info: None,
         };
         log_store.append_entry(entry2).await;
 
