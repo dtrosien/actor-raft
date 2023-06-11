@@ -218,6 +218,7 @@ impl ReplicatorHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::raft_server::actors::client_store::ClientStoreHandle;
     use crate::raft_server::actors::log::log_store::LogStoreHandle;
     use crate::raft_server::actors::log::test_utils::TestApp;
     use crate::raft_server::actors::term_store::TermStoreHandle;
@@ -345,7 +346,8 @@ mod tests {
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let app = Arc::new(Mutex::new(TestApp {}));
-        let executor = ExecutorHandle::new(log_store.clone(), 1, app);
+        let client_store = ClientStoreHandle::new();
+        let executor = ExecutorHandle::new(log_store.clone(), client_store, 1, app);
 
         let config = get_test_config().await;
 

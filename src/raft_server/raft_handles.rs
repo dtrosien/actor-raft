@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::app::{App, AppResult};
+use crate::raft_server::actors::client_store::ClientStoreHandle;
 use crate::raft_server::actors::election::counter::calculate_required_votes;
 use crate::raft_server::actors::election::counter::CounterHandle;
 use crate::raft_server::actors::state_store::StateStoreHandle;
@@ -31,6 +32,7 @@ pub struct RaftHandles {
     pub counter: CounterHandle,
     pub initiator: InitiatorHandle,
     pub log_store: LogStoreHandle,
+    pub client_store: ClientStoreHandle,
     pub executor: ExecutorHandle,
     pub replicator: ReplicatorHandle,
     pub watchdog: WatchdogHandle,
@@ -66,7 +68,13 @@ impl RaftHandles {
             config.vote_db_path.clone(),
         );
 
-        let executor = ExecutorHandle::new(log_store.clone(), state_meta.term, Arc::clone(&app));
+        let client_store = ClientStoreHandle::new();
+        let executor = ExecutorHandle::new(
+            log_store.clone(),
+            client_store.clone(),
+            state_meta.term,
+            Arc::clone(&app),
+        );
         let replicator = ReplicatorHandle::new(
             executor.clone(),
             term_store.clone(),
@@ -82,6 +90,7 @@ impl RaftHandles {
             counter,
             initiator,
             log_store,
+            client_store,
             executor,
             replicator,
             watchdog,

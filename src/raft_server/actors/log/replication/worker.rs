@@ -339,6 +339,7 @@ impl WorkerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::raft_server::actors::client_store::ClientStoreHandle;
     use crate::raft_server::actors::log::test_utils::TestApp;
     use crate::raft_server::actors::watchdog::WatchdogHandle;
     use crate::raft_server::db::test_utils::get_test_db_paths;
@@ -584,7 +585,13 @@ mod tests {
         let app = Arc::new(Mutex::new(TestApp {}));
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
-        let executor = ExecutorHandle::new(log_store.clone(), term_store.get_term().await, app);
+        let client_store = ClientStoreHandle::new();
+        let executor = ExecutorHandle::new(
+            log_store.clone(),
+            client_store,
+            term_store.get_term().await,
+            app,
+        );
         // test server connection
         let port = get_test_port().await;
         let node = NodeConfig {
