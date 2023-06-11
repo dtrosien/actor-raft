@@ -2,7 +2,6 @@
 
 ## todos:
 
-- implement + test client registration (client store)
 - implement and test snapshot capabilities with log compactor
 - implement install_snapshot rpc, which send snapshot files over to newly added or erased nodes to
 
