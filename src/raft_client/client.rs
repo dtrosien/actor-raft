@@ -1,9 +1,6 @@
 use crate::raft_client::config::{Config, NodeConfig};
 use crate::raft_client_rpc::raft_client_rpc_client::RaftClientRpcClient;
-use crate::raft_client_rpc::{
-    ClientQueryReply, ClientQueryRequest, ClientRequestReply, ClientRequestRequest,
-    RegisterClientReply, RegisterClientRequest,
-};
+use crate::raft_client_rpc::{ClientQueryRequest, ClientRequestRequest, RegisterClientRequest};
 use rand::Rng;
 use std::collections::HashMap;
 use std::error::Error;
@@ -15,7 +12,7 @@ use tracing::{info, warn};
 
 pub struct Client {
     id: Option<u64>,
-    sequence_num: Option<u64>,
+    sequence_num: u64,
     leader_id: Option<u64>,
     config: Config,
     tonic_client: RaftClientRpcClient<Channel>,
@@ -50,6 +47,13 @@ impl Client {
         &mut self,
         command_payload: Vec<u8>,
     ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>> {
+        // register at leader if client has no id yet
+        if self.id.is_none() {
+            if let Ok(id) = self.register().await {
+                self.id = id
+            };
+        }
+
         let command = self.build_command(command_payload).await;
 
         let mut retries_left = self.config.max_retries;
@@ -71,7 +75,6 @@ impl Client {
         }
     }
 
-    // todo use this method in command if client id is not set
     async fn register(&mut self) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
         let register_request = self.build_register_request().await;
         let mut retries_left = self.config.max_retries;
@@ -164,10 +167,13 @@ impl Client {
     async fn build_query(&self, payload: Vec<u8>) -> ClientQueryRequest {
         ClientQueryRequest { query: payload }
     }
-    async fn build_command(&self, payload: Vec<u8>) -> ClientRequestRequest {
+    async fn build_command(&mut self, payload: Vec<u8>) -> ClientRequestRequest {
+        self.sequence_num += 1;
         ClientRequestRequest {
-            client_id: 0,    // todo impl of registration needed
-            sequence_num: 0, // todo impl of registration needed
+            client_id: self
+                .id
+                .expect("no client id, registration seemed to have failed"),
+            sequence_num: self.sequence_num,
             command: payload,
         }
     }
@@ -261,7 +267,7 @@ impl ClientBuilder {
 
         Client {
             id: self.id,
-            sequence_num: None,
+            sequence_num: 0,
             leader_id: Some(leader.id),
             config: self.config.clone(),
             tonic_client,

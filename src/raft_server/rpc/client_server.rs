@@ -11,8 +11,6 @@ use crate::raft_server_rpc::{EntryType, SessionInfo};
 use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};
 
-// todo [idea] rename service_server
-
 #[derive(Debug)]
 pub struct RaftClientServer {
     handles: RaftHandles,
@@ -30,6 +28,12 @@ impl RaftClientRpc for RaftClientServer {
         &self,
         request: Request<ClientRequestRequest>,
     ) -> Result<Response<ClientRequestReply>, Status> {
+        // step 1 reply false with leader hint if not leader
+        let leader_id = self.handles.state_store.get_leader_id().await;
+        if self.handles.state_store.get_state().await != ServerState::Leader {
+            return deny_client_request(leader_id);
+        }
+
         let rpc_arguments = request.into_inner();
 
         let session = SessionInfo {
@@ -42,8 +46,15 @@ impl RaftClientRpc for RaftClientServer {
             session.client_id, session.sequence_num
         );
 
-        // check if request already in client store to prevent enforce only once semantic
-        //todo client store
+        // check if request already in client store to prevent enforce only once semantic (Step4)
+        if let Some(result) = self
+            .handles
+            .client_store
+            .get_result(session.client_id, session.sequence_num)
+            .await
+        {
+            return accept_client_request(None, result);
+        }
 
         // creat entry with index
         match self
@@ -53,7 +64,6 @@ impl RaftClientRpc for RaftClientServer {
         {
             None => {
                 warn!("no entry was created");
-                let leader_id = self.handles.state_store.get_leader_id().await;
                 deny_client_request(leader_id)
             }
             Some(entry) => {
@@ -62,7 +72,7 @@ impl RaftClientRpc for RaftClientServer {
                 // append entry to local log and replicate
                 self.handles.append_entry(entry).await;
 
-                // wait until log was applied and get result
+                // wait until log was applied and get result  (Step 6: executor saves output in client_store)
                 // todo [feature/bug?] maybe wrap with timeout
                 match self.handles.wait_for_execution_notification(index).await {
                     None => deny_client_request(None),
@@ -74,9 +84,8 @@ impl RaftClientRpc for RaftClientServer {
 
     async fn register_client(
         &self,
-        request: Request<RegisterClientRequest>,
+        _request: Request<RegisterClientRequest>,
     ) -> Result<Response<RegisterClientReply>, Status> {
-        let rpc_arguments = request.into_inner();
         info!("got client registration request");
 
         let leader_id = self.handles.state_store.get_leader_id().await;
@@ -100,10 +109,9 @@ impl RaftClientRpc for RaftClientServer {
             Some(entry) => {
                 let index = entry.index;
 
-                // append entry to local log and replicate
                 self.handles.append_entry(entry).await;
 
-                // wait until log was applied and get result
+                // Step 3 + 4 wait until log was applied (client was registered in client_store) and get client_id
                 // todo [feature/bug?] maybe wrap with timeout
                 match self.handles.wait_for_execution_notification(index).await {
                     None => deny_client_registration(None),
@@ -519,5 +527,86 @@ mod tests {
         assert!(!request_reply.status);
         assert_eq!(request_reply.response, None);
         assert_eq!(request_reply.leader_hint, leader_id) // when leader no hint is given
+    }
+
+    #[tokio::test]
+    async fn client_registration_accept_test() {
+        // init test setup
+        let mut db_paths = get_test_db_paths(3).await;
+        let state_store = StateStoreHandle::default();
+        let wd = WatchdogHandle::new(state_store.clone());
+        let term_store = TermStoreHandle::new(wd.clone(), db_paths.pop().unwrap());
+        let log_store = LogStoreHandle::new(db_paths.pop().unwrap());
+
+        log_store.reset_log().await;
+        term_store.reset_term().await;
+
+        let state_meta = StateMeta {
+            last_log_index: 0, // only matters for replicator and voter
+            last_log_term: 0,  //only matters for replicator and voter
+            term: 0,
+            id: 0,
+            leader_commit: 0,
+        };
+
+        let mut config = get_test_config().await;
+        // to avoid state change from leader
+        config.state_timeout = 10000;
+        let handles = RaftHandles::build(
+            state_store,
+            wd,
+            config,
+            Arc::new(Mutex::new(TestApp {})),
+            term_store,
+            log_store,
+            state_meta,
+        );
+        let client_server = RaftClientServer { handles };
+
+        client_server.handles.initiator.reset_voted_for().await;
+
+        client_server
+            .handles
+            .replicator
+            .register_workers_at_executor()
+            .await;
+
+        client_server
+            .handles
+            .state_store
+            .change_state(ServerState::Leader)
+            .await;
+
+        // start test
+
+        let msg1 = RegisterClientRequest {};
+        let request1 = Request::new(msg1);
+
+        //  fake replication since no servers are running
+        let repl_fake = async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let repl1 = client_server
+                .handles
+                .executor
+                .register_replication_success(1, 1)
+                .await;
+            let repl2 = client_server
+                .handles
+                .executor
+                .register_replication_success(2, 1)
+                .await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(client_server.handles.executor.get_commit_index().await, 1);
+        };
+
+        let response = tokio::join!(client_server.register_client(request1), repl_fake).0;
+
+        let request_reply = response.unwrap().into_inner();
+
+        let reply_payload: u64 =
+            bincode::deserialize(&request_reply.client_id.unwrap().to_ne_bytes()).unwrap();
+
+        assert_eq!(reply_payload, 1); // the client_id equals the log index of its entry
+        assert_eq!(request_reply.leader_hint, None) // when leader no hint is given
     }
 }

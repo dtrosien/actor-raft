@@ -1,6 +1,4 @@
-// todo [crucial feature] implement store registered clients
-
-use crate::app::{App, AppResult};
+use crate::app::AppResult;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 
@@ -76,8 +74,10 @@ impl ClientStore {
                 result,
                 respond_to,
             } => {
-                self.results
-                    .insert(client_id, (Some(sequence_num), Some(result)));
+                if self.results.contains_key(&client_id) {
+                    self.results
+                        .insert(client_id, (Some(sequence_num), Some(result)));
+                }
                 let _ = respond_to.send(());
             }
             ClientStoreMsg::AddClient {
@@ -173,4 +173,32 @@ impl Default for ClientStoreHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn set_get_result_test() {
+        let client_store = ClientStoreHandle::new();
+
+        client_store.add_client(1).await;
+
+        assert!(client_store.client_exist(1).await);
+
+        assert!(client_store.get_result(1, 1).await.is_none());
+
+        let result = AppResult {
+            success: true,
+            payload: vec![],
+        };
+
+        client_store.set_result(1, 1, result.clone()).await;
+
+        assert!(client_store.get_result(1, 1).await.is_some());
+        assert!(client_store.get_result(1, 2).await.is_none());
+
+        client_store.set_result(2, 1, result.clone()).await;
+        assert!(client_store.get_result(2, 1).await.is_none());
+
+        client_store.set_result(1, 2, result.clone()).await;
+        assert!(client_store.get_result(1, 1).await.is_none());
+        assert!(client_store.get_result(1, 2).await.is_some());
+    }
 }

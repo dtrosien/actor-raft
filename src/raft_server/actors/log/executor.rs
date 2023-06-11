@@ -5,6 +5,7 @@ use crate::app::{App, AppResult};
 use crate::raft_server::state_meta::StateMeta;
 use crate::raft_server_rpc::EntryType;
 
+use crate::raft_server::actors::client_store::ClientStoreHandle;
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
@@ -17,7 +18,6 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 struct Executor {
     receiver: mpsc::Receiver<ExecutorMsg>,
     applied_sender: broadcast::Sender<(u64, AppResult)>,
-    // todo sender to client store
     commit_index: u64,
     commit_term: u64, // term of last committed entry, used for queries to prevent db reads
     last_applied: u64,
@@ -25,6 +25,7 @@ struct Executor {
     current_term: u64,
     match_index: HashMap<u64, u64>,
     log_store: LogStoreHandle,
+    client_store: ClientStoreHandle,
     app: Arc<Mutex<dyn App>>,
 }
 
@@ -80,6 +81,7 @@ impl Executor {
     fn new(
         receiver: mpsc::Receiver<ExecutorMsg>,
         log_store: LogStoreHandle,
+        client_store: ClientStoreHandle,
         current_term: u64,
         app: Arc<Mutex<dyn App>>,
     ) -> Self {
@@ -94,6 +96,7 @@ impl Executor {
             current_term,
             match_index: Default::default(),
             log_store,
+            client_store,
             app,
         }
     }
@@ -171,19 +174,25 @@ impl Executor {
         while self.last_applied < self.commit_index {
             let entry_to_be_applied = self.last_applied + 1;
             if let Some(entry) = self.log_store.read_entry(entry_to_be_applied).await {
+                let session = entry.session_info.clone();
                 let result: AppResult = match EntryType::from_i32(entry.entry_type) {
                     Some(EntryType::Command) => self.app.lock().await.run(entry).await?,
                     Some(EntryType::Registration) => self.register_client(entry).await?,
-                    Some(EntryType::MembershipChange) => todo!(),
+                    Some(EntryType::MembershipChange) => todo!("change config, trigger save config in new config trait for user, add/remove nodes in executor, replicator and initiator"),
                     Some(EntryType::InstallSnapshot) => self.app.lock().await.snapshot().await?, // todo [feature] correct impl of triggering snapshots and sending snapshots (different things !!!)
                     _ => {
-                        panic!()
+                        panic!("undefined entry type")
                     }
                 };
-
                 reply = result.success;
+                // store result in client store, if it was triggered by a client
+                if let Some(s) = session {
+                    self.client_store
+                        .set_result(s.client_id, s.sequence_num, result.clone())
+                        .await;
+                }
                 let _ = self.applied_sender.send((entry_to_be_applied, result));
-                // todo handle error
+                // todo [maybe] handle error
             };
             self.last_applied = entry_to_be_applied;
         }
@@ -195,7 +204,12 @@ impl Executor {
         &mut self,
         entry: Entry,
     ) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
-        todo!(!!!!!!!!!!!!!!!!!!!!!!!!!!!!!)
+        self.client_store.add_client(entry.index).await; // todo [feature / idea] methods like this could have a timeout with tokio select and then return err
+        let payload = bincode::serialize(&entry.index).unwrap();
+        Ok(AppResult {
+            success: true,
+            payload,
+        })
     }
 
     #[tracing::instrument(ret, level = "debug")]
@@ -237,9 +251,14 @@ pub struct ExecutorHandle {
 
 impl ExecutorHandle {
     #[tracing::instrument(ret, level = "debug")]
-    pub fn new(log_store: LogStoreHandle, current_term: u64, app: Arc<Mutex<dyn App>>) -> Self {
+    pub fn new(
+        log_store: LogStoreHandle,
+        client_store: ClientStoreHandle,
+        current_term: u64,
+        app: Arc<Mutex<dyn App>>,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(8);
-        let mut actor = Executor::new(receiver, log_store, current_term, app);
+        let mut actor = Executor::new(receiver, log_store, client_store, current_term, app);
         tokio::spawn(async move { actor.run().await });
 
         Self { sender }
@@ -407,8 +426,9 @@ mod tests {
     async fn get_commit_index_test() {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
+        let client_store = ClientStoreHandle::new();
         let app = Arc::new(Mutex::new(TestApp {}));
-        let executor = ExecutorHandle::new(log_store, 0, app);
+        let executor = ExecutorHandle::new(log_store, client_store, 0, app);
 
         assert_eq!(executor.get_commit_index().await, 0);
     }
@@ -418,7 +438,8 @@ mod tests {
         let mut test_db_paths = get_test_db_paths(1).await;
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         let app = Arc::new(Mutex::new(TestApp {}));
-        let executor = ExecutorHandle::new(log_store, 0, app);
+        let client_store = ClientStoreHandle::new();
+        let executor = ExecutorHandle::new(log_store, client_store, 0, app);
         let payload = bincode::serialize("some payload").unwrap();
 
         // index is lower than leader commit -> index wins
@@ -471,7 +492,8 @@ mod tests {
         log_store.append_entry(entry2).await;
 
         let app = Arc::new(Mutex::new(TestApp {}));
-        let executor = ExecutorHandle::new(log_store, 0, app);
+        let client_store = ClientStoreHandle::new();
+        let executor = ExecutorHandle::new(log_store, client_store, 0, app);
 
         let mut applied_receiver = executor.get_applied_receiver().await;
 
@@ -531,7 +553,8 @@ mod tests {
         let log_store = LogStoreHandle::new(test_db_paths.pop().unwrap());
         log_store.reset_log().await;
         let app = Arc::new(Mutex::new(TestApp {}));
-        let executor = ExecutorHandle::new(log_store.clone(), 0, app);
+        let client_store = ClientStoreHandle::new();
+        let executor = ExecutorHandle::new(log_store.clone(), client_store, 0, app);
 
         // needed for term check in log
         let payload = bincode::serialize("some payload").unwrap();

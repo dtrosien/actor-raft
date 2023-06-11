@@ -56,7 +56,7 @@ async fn replication_test() {
         let command_result = client.command(bincode::serialize("test").unwrap()).await;
         let answer: String = bincode::deserialize(&command_result.unwrap().unwrap()).unwrap();
         let index = r_handle1.log_store.get_last_log_index().await;
-        assert_eq!(index, 1);
+        assert_eq!(index, 2); // not 1!! since registration is #1 and first command #2
         assert_eq!(answer, "successful execution");
 
         // test query
@@ -64,7 +64,7 @@ async fn replication_test() {
             .query(bincode::serialize("test_query").unwrap())
             .await;
         let answer: String = bincode::deserialize(&query_result.unwrap().unwrap()).unwrap();
-        assert_eq!(index, 1);
+        assert_eq!(index, 2);
         assert_eq!(answer, "successful query: test_query");
     });
 
@@ -76,7 +76,7 @@ async fn replication_test() {
             panic!()
         }
         Some(entry) => {
-            assert_eq!(entry.index, 1)
+            assert_eq!(entry.index, 2)
         }
     }
     match r_handle3.log_store.read_last_entry().await {
@@ -84,7 +84,7 @@ async fn replication_test() {
             panic!()
         }
         Some(entry) => {
-            assert_eq!(entry.index, 1)
+            assert_eq!(entry.index, 2)
         }
     }
 }
