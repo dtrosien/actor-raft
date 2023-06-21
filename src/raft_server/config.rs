@@ -1,5 +1,12 @@
+use std::error::Error;
+use std::fmt::Debug;
 use crate::raft_server::raft_node::ServerState;
 use serde::{Deserialize, Serialize};
+use futures_util::future::BoxFuture;
+
+pub trait ConfigStorage :Send + Sync + Debug {
+    fn persist_config (&mut self, config: Config)-> BoxFuture<'_, Result<(), Box<dyn Error + Send + Sync>>>;
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {

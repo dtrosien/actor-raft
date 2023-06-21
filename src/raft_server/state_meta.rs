@@ -6,7 +6,7 @@ pub struct StateMeta {
     pub last_log_index: u64,
     pub last_log_term: u64,
     pub term: u64,
-    pub id: u64,
+    pub id: u64, // todo [remove?] is this only for testing?
     pub leader_commit: u64, // todo [test] why couldnt this be set to zero inside actor
 }
 
