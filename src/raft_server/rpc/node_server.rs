@@ -100,7 +100,7 @@ impl RaftServerRpc for RaftNodeServer {
         let rpc_arguments = request.into_inner();
 
         // reset timeout
-        self.handles.state_timer.register_heartbeat().await;
+        // self.handles.state_timer.register_heartbeat().await; // todo should be removed to prevent dead locks
 
         // step 1: reply false if term < current_term
         let (term_ok, current_term) = self
