@@ -204,7 +204,7 @@ impl Executor {
                     Some(EntryType::Command) => self.app.lock().await.run(entry).await?,
                     Some(EntryType::Registration) => self.register_client(entry).await?,
                     Some(EntryType::MembershipChange) => todo!("change config, trigger save config in new config trait for user, add/remove nodes in executor, replicator and initiator"),
-                    Some(EntryType::InstallSnapshot) => self.app.lock().await.snapshot().await?, // todo [feature] correct impl of triggering snapshots and sending snapshots (different things !!!)
+                   // Some(EntryType::InstallSnapshot) => self.app.lock().await.snapshot().await?, // todo [feature] this will be moved to compactor since it does not need to go through the og correct impl of triggering snapshots and sending snapshots (different things !!!)
                     _ => {
                         panic!("undefined entry type")
                     }
