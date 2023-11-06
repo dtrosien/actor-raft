@@ -13,9 +13,6 @@ pub trait App: Send + Sync + Debug {
         &self,
         payload: Vec<u8>,
     ) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>>;
-
-    // todo [crit feature]separate take_snapshot and install_snapshot? -> into own trait whcih is called by the compactor
-    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>>;
 }
 
 #[derive(Debug, Clone)]

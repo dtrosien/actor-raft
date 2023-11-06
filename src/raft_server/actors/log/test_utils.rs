@@ -45,8 +45,4 @@ impl App for TestApp {
         };
         Box::pin(future)
     }
-
-    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        todo!()
-    }
 }

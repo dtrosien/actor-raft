@@ -56,10 +56,6 @@ impl App for IntegrationTestApp {
         };
         Box::pin(future)
     }
-
-    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        todo!()
-    }
 }
 
 // global var used to offer unique dbs for each store in unit tests to prevent concurrency issues while testing
@@ -296,10 +292,6 @@ impl App for DistributedSled {
         };
         Box::pin(future)
     }
-
-    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        todo!()
-    }
 }
 
 ////////////////////////////// Example Hashmap App//////////////////////////////////
@@ -363,9 +355,5 @@ impl App for HAHashMap {
             Ok(result)
         };
         Box::pin(future)
-    }
-
-    fn snapshot(&self) -> BoxFuture<'_, Result<AppResult, Box<dyn Error + Send + Sync>>> {
-        todo!()
     }
 }
