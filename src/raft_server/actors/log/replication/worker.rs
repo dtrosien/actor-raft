@@ -25,6 +25,7 @@ struct Worker {
     state_meta: StateMeta,
     entries_cache: VecDeque<Entry>,
     client: Option<NodeClient>,
+    reload: bool,
 }
 
 #[derive(Debug)]
@@ -74,6 +75,7 @@ impl Worker {
             state_meta,
             entries_cache: Default::default(),
             client: None,
+            reload: false,
         }
     }
 
@@ -153,13 +155,14 @@ impl Worker {
                         .register_replication_success(self.node.id, last_entry_index)
                         .await;
                     self.entries_cache.clear();
+                    self.reload = false;
                 } else {
                     // new try with next heartbeat
                     warn!(
                         "log not up to date for {}, try to append previous entry with index : {}, term: {}",
                         self.node.id, self.state_meta.last_log_index,self.state_meta.last_log_term
                     );
-                    self.append_previous_entry_to_log_cache().await
+                    self.append_previous_entry_to_log_cache().await;
                 }
             }
             Err(_) => {
@@ -190,6 +193,17 @@ impl Worker {
     #[tracing::instrument(ret, level = "debug")]
     async fn append_previous_entry_to_log_cache(&mut self) {
         // todo [refactor] clean up
+
+        if !self.reload {
+            if let Some(entry) = self
+                .log_store
+                .read_entry(self.state_meta.last_log_index)
+                .await
+            {
+                self.entries_cache.push_back(entry.clone());
+            }
+            self.reload = true;
+        }
 
         match self
             .log_store
@@ -252,7 +266,7 @@ impl Worker {
             leader_id: self.state_meta.id,
             prev_log_index: self.state_meta.last_log_index, // be not confused by naming: the current last entry will be the previous entry of the upcoming request
             prev_log_term: self.state_meta.last_log_term,
-            entries: Vec::from(self.entries_cache.clone()),
+            entries: self.entries_cache.iter().rev().cloned().collect(),
             leader_commit: self.state_meta.leader_commit,
         }
     }
@@ -557,7 +571,7 @@ mod tests {
                 assert_eq!(worker.get_state_meta().await.last_log_index, 8);
                 assert_eq!(worker.get_state_meta().await.last_log_term, 1);
                 assert_eq!(worker.get_state_meta().await.leader_commit, 10);
-                assert_eq!(worker.get_cached_entries().await.len(), 7);
+                assert_eq!(worker.get_cached_entries().await.len(), 8);
                 assert_eq!(worker.get_cached_entries().await.pop_front().unwrap().index ,15);
                 assert_eq!(worker.get_cached_entries().await.pop_back().unwrap().index, 8);
                 }

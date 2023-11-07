@@ -342,13 +342,18 @@ impl RaftNode {
     /// let the node send heartbeats to all other nodes until a state exit signal is received
     /// (this also triggers replication of appended entries)
     async fn send_heartbeats(&self) -> &RaftNode {
-        // todo [feature] send no opt entry here
         let hb_interval = Duration::from_millis(self.handles.config.heartbeat_interval);
         let r_exit_state = self.watchdog.get_exit_receiver().await;
         let r_shutdown = self.s_shutdown.subscribe();
+        let mut first = true;
         while r_exit_state.is_empty() && r_shutdown.is_empty() {
             info!("send heartbeat");
-            self.handles.send_heartbeat().await;
+            if first {
+                self.handles.send_no_opt_entry().await;
+                first = false;
+            } else {
+                self.handles.send_heartbeat().await;
+            }
             // to prevent timeout leader must trigger his own timer
             self.handles.state_timer.register_heartbeat().await; // todo [later feature] if possible maybe trigger this in append entry client (when follower answer)
             tokio::time::sleep(hb_interval).await;
