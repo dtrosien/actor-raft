@@ -6,6 +6,10 @@ use crate::raft_server::state_meta::StateMeta;
 use crate::raft_server_rpc::EntryType;
 
 use crate::raft_server::actors::client_store::ClientStoreHandle;
+use crate::raft_server::actors::election::initiator::InitiatorHandle;
+use crate::raft_server::actors::log::replication::replicator::ReplicatorHandle;
+use crate::raft_server::config::{Config, ConfigStorage, NodeConfig};
+use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
@@ -27,6 +31,10 @@ struct Executor {
     log_store: LogStoreHandle,
     client_store: ClientStoreHandle,
     app: Arc<Mutex<dyn App>>,
+    ///////
+    replicator: Option<ReplicatorHandle>,
+    initiator: Option<InitiatorHandle>,
+    config_storage: Arc<Mutex<Option<Box<dyn ConfigStorage>>>>, // todo just use Vec NodeConf as cache .. this could be read from handles to update config if needed
 }
 
 #[derive(Debug)]
@@ -74,6 +82,11 @@ enum ExecutorMsg {
         respond_to: oneshot::Sender<()>,
         state_meta: StateMeta,
     },
+    SetCyclicDependencies {
+        respond_to: oneshot::Sender<()>,
+        replicator: ReplicatorHandle,
+        initiator: InitiatorHandle,
+    },
 }
 
 impl Executor {
@@ -98,6 +111,9 @@ impl Executor {
             log_store,
             client_store,
             app,
+            replicator: None,
+            initiator: None,
+            config_storage: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -152,6 +168,15 @@ impl Executor {
                     respond_to.send(())
                 };
             }
+            ExecutorMsg::SetCyclicDependencies {
+                replicator,
+                initiator,
+                respond_to,
+            } => {
+                self.replicator = Some(replicator);
+                self.initiator = Some(initiator);
+                let _ = respond_to.send(());
+            }
         }
     }
 
@@ -179,7 +204,7 @@ impl Executor {
                     Some(EntryType::Command) => self.app.lock().await.run(entry).await?,
                     Some(EntryType::Registration) => self.register_client(entry).await?,
                     Some(EntryType::MembershipChange) => todo!("change config, trigger save config in new config trait for user, add/remove nodes in executor, replicator and initiator"),
-                    Some(EntryType::InstallSnapshot) => self.app.lock().await.snapshot().await?, // todo [feature] correct impl of triggering snapshots and sending snapshots (different things !!!)
+                    Some(EntryType::NoOpt) => {AppResult{ success: true, payload: vec![] }},
                     _ => {
                         panic!("undefined entry type")
                     }
@@ -200,12 +225,43 @@ impl Executor {
     }
 
     #[tracing::instrument(ret, level = "debug")]
+    async fn change_membership(
+        &mut self,
+        entry: Entry,
+    ) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
+        let change: MembershipChange = bincode::deserialize(&entry.payload)?;
+        if change.add {
+            todo!("self.replicator.unwrap().add_worker");
+            todo!("self.initiator.unwrap().add_worker");
+            // self.addto index or let replicator do the registration like normal, hwever this could cause deadlock -> call must not block
+        } else {
+            // same like above but with remove
+        }
+
+        // self.config_storage
+        //     .lock()
+        //     .await
+        //     .as_mut()
+        //     .unwrap()
+        //     .persist_config(config) todo insert config here ... needs to be cached in this actor
+        //     .await
+        //     .unwrap();
+
+        let payload = bincode::serialize("success")?;
+
+        Ok(AppResult {
+            success: true,
+            payload,
+        })
+    }
+
+    #[tracing::instrument(ret, level = "debug")]
     async fn register_client(
         &mut self,
         entry: Entry,
     ) -> Result<AppResult, Box<dyn Error + Send + Sync>> {
         self.client_store.add_client(entry.index).await; // todo [feature / idea] methods like this could have a timeout with tokio select and then return err
-        let payload = bincode::serialize(&entry.index).unwrap();
+        let payload = bincode::serialize(&entry.index)?;
         Ok(AppResult {
             success: true,
             payload,
@@ -373,6 +429,22 @@ impl ExecutorHandle {
         let _ = self.sender.send(msg).await;
         recv.await.expect("Actor task has been killed")
     }
+
+    #[tracing::instrument(ret, level = "debug")]
+    pub async fn set_cyclic_dependencies(
+        &self,
+        replicator: ReplicatorHandle,
+        initiator: InitiatorHandle,
+    ) {
+        let (send, recv) = oneshot::channel();
+        let msg = ExecutorMsg::SetCyclicDependencies {
+            respond_to: send,
+            replicator,
+            initiator,
+        };
+        let _ = self.sender.send(msg).await;
+        recv.await.expect("Actor task has been killed")
+    }
 }
 
 #[tracing::instrument(ret, level = "debug")]
@@ -412,6 +484,12 @@ fn calculate_required_replicas(num_worker: u64) -> u64 {
     } else {
         (num_worker + 1) / 2
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MembershipChange {
+    pub add: bool,
+    pub nodes: Vec<NodeConfig>,
 }
 
 #[cfg(test)]

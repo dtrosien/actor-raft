@@ -18,10 +18,11 @@ use crate::raft_server::config::Config;
 use crate::raft_server::raft_node::ServerState;
 use crate::raft_server::state_meta::StateMeta;
 use crate::raft_server_rpc::append_entries_request::Entry;
+use crate::raft_server_rpc::EntryType::NoOpt;
 use crate::raft_server_rpc::{EntryType, SessionInfo};
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Clone, Debug)]
 pub struct RaftHandles {
@@ -129,6 +130,23 @@ impl RaftHandles {
             payload,
             session_info,
         })
+    }
+
+    pub async fn send_no_opt_entry(&self) {
+        if self.state_store.get_state().await == ServerState::Leader {
+            info!("node {} will send NO OPT entry", self.config.id);
+            let no_opt_entry = self
+                .create_entry(vec![], NoOpt, None)
+                .await
+                .expect("creation of no opt entry failed");
+            self.append_entry(no_opt_entry.clone()).await;
+            if let None = self
+                .wait_for_execution_notification(no_opt_entry.index)
+                .await
+            {
+                warn!("NO OPT was not applied correctly")
+            };
+        }
     }
 
     // append only in leader state  // todo [feature] proxy append to leader if in follower state

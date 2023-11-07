@@ -32,6 +32,7 @@ enum entry_type {
   REGISTRATION = 1;
   MEMBERSHIP_CHANGE = 2;
   INSTALL_SNAPSHOT = 3;
+  NO_OPT = 4;
 }
 
 message SessionInfo {

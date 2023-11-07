@@ -2,12 +2,10 @@
 
 ## todos:
 
-- implement and test snapshot capabilities with log compactor
+- implement and test snapshot capabilities with compactor
 - implement install_snapshot rpc, which send snapshot files over to newly added or erased nodes to
+- implement membership changes (see executor todos)
 
-
-- more integration tests
-- more unit tests
 
 
 - no opt entries should be created by leader after leader change to prevent certain bugs (remember in tests the log
