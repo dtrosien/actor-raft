@@ -22,7 +22,7 @@ use crate::raft_server_rpc::EntryType::NoOpt;
 use crate::raft_server_rpc::{EntryType, SessionInfo};
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Clone, Debug)]
 pub struct RaftHandles {
@@ -140,9 +140,12 @@ impl RaftHandles {
                 .await
                 .expect("creation of no opt entry failed");
             self.append_entry(no_opt_entry.clone()).await;
-            self.wait_for_execution_notification(no_opt_entry.index)
+            if let None = self
+                .wait_for_execution_notification(no_opt_entry.index)
                 .await
-                .expect("no opt entry was not applied");
+            {
+                warn!("NO OPT was not applied correctly")
+            };
         }
     }
 
