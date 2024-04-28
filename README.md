@@ -117,7 +117,7 @@ impl App for HAHashMap {
 
 ## Overview of Node Actors:
 
-<img src="actors_overview.png" width="500" alt="Overview of the actors and their interactions">
+![Overview of the actors and their interactions](actors_overview.png)
 
 ## TODO:
 
